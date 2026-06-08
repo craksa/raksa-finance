@@ -8,45 +8,59 @@ const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov
 const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const now = new Date();
 
-// GitHub config
 const GITHUB_OWNER = "craksa";
 const GITHUB_REPO  = "raksa-finance";
 const GITHUB_FILE  = "data/transactions.json";
 const GITHUB_TOKEN = "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";
 const GITHUB_API   = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}`;
-
-async function loadFromGitHub() {
-  try {
-    const res = await fetch(GITHUB_API, {
-      headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: "application/vnd.github.v3+json" }
-    });
-    if (!res.ok) return { data: [], sha: null };
-    const json = await res.json();
-    const data = JSON.parse(atob(json.content));
-    return { data, sha: json.sha };
-  } catch(e) { return { data: [], sha: null }; }
-}
-
-async function saveToGitHub(transactions, sha) {
-  try {
-    const content = btoa(unescape(encodeURIComponent(JSON.stringify(transactions, null, 2))));
-    const body = { message: "Update finance data", content, ...(sha ? { sha } : {}) };
-    const res = await fetch(GITHUB_API, {
-      method: "PUT",
-      headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    const json = await res.json();
-    return json.content?.sha || sha;
-  } catch(e) { return sha; }
-}
+const LOCAL_KEY    = "raksa_txn_cache";
+const SHA_KEY      = "raksa_sha_cache";
 
 function fmtUSD(n) { return "$" + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
 function fmtKHR(n) { return "៛" + Math.round(n*4100).toLocaleString(); }
 
+async function ghGet() {
+  const res = await fetch(GITHUB_API + "?t=" + Date.now(), {
+    headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: "application/vnd.github.v3+json" }
+  });
+  if (!res.ok) return null;
+  const json = await res.json();
+  const data = JSON.parse(atob(json.content.replace(/\n/g,"")));
+  return { data, sha: json.sha };
+}
+
+async function ghPut(transactions, sha) {
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(transactions, null, 2))));
+  const res = await fetch(GITHUB_API, {
+    method: "PUT",
+    headers: {
+      Authorization: `token ${GITHUB_TOKEN}`,
+      Accept: "application/vnd.github.v3+json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      message: `Update transactions ${new Date().toISOString()}`,
+      content,
+      sha
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.message || "GitHub save failed");
+  }
+  const json = await res.json();
+  return json.content.sha;
+}
+
 export default function App() {
-  const [transactions, setTransactions] = useState([]);
-  const [sha, setSha] = useState(null);
+  const [transactions, setTransactions] = useState(() => {
+    // Instantly load from localStorage cache on first render
+    try {
+      const cached = localStorage.getItem(LOCAL_KEY);
+      return cached ? JSON.parse(cached) : [];
+    } catch(e) { return []; }
+  });
+  const [sha, setSha] = useState(() => localStorage.getItem(SHA_KEY) || null);
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [currency, setCurrency] = useState("USD");
@@ -54,38 +68,80 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [form, setForm] = useState({ type:"income", category:"", amount:"", note:"", date:now.toISOString().split("T")[0] });
   const [editId, setEditId] = useState(null);
-  const [syncStatus, setSyncStatus] = useState("loading");
+  const [syncStatus, setSyncStatus] = useState("idle"); // idle|syncing|saved|error
+  const [syncMsg, setSyncMsg] = useState("");
   const [toast, setToast] = useState(null);
   const isFirst = useRef(true);
   const saveTimer = useRef(null);
+  const latestTxn = useRef(transactions);
+  const latestSha = useRef(sha);
 
   const fmt = n => currency === "USD" ? fmtUSD(n) : fmtKHR(n);
   const showToast = (msg, color="#2cb67d") => { setToast({msg,color}); setTimeout(()=>setToast(null),3000); };
 
-  // Load from GitHub on mount
+  // Keep refs in sync
+  useEffect(() => { latestTxn.current = transactions; }, [transactions]);
+  useEffect(() => { latestSha.current = sha; }, [sha]);
+
+  // On mount: sync from GitHub in background, but keep local cache visible immediately
   useEffect(() => {
     (async () => {
-      setSyncStatus("loading");
-      const { data, sha: fileSha } = await loadFromGitHub();
-      setTransactions(data);
-      setSha(fileSha);
-      setSyncStatus(fileSha ? "synced" : "new");
+      setSyncStatus("syncing");
+      setSyncMsg("Syncing with GitHub...");
+      try {
+        const result = await ghGet();
+        if (result) {
+          // Only update if GitHub has newer/different data
+          const ghStr = JSON.stringify(result.data);
+          const localStr = JSON.stringify(latestTxn.current);
+          if (ghStr !== localStr) {
+            setTransactions(result.data);
+            localStorage.setItem(LOCAL_KEY, JSON.stringify(result.data));
+          }
+          setSha(result.sha);
+          localStorage.setItem(SHA_KEY, result.sha);
+          setSyncStatus("saved");
+          setSyncMsg(`✅ Synced · ${result.data.length} transactions`);
+        } else {
+          setSyncStatus("error");
+          setSyncMsg("⚠ Using local cache — GitHub unreachable");
+        }
+      } catch(e) {
+        setSyncStatus("error");
+        setSyncMsg("⚠ Using local cache — " + e.message);
+      }
     })();
   }, []);
 
-  // Auto-save to GitHub on change
+  // Save to localStorage immediately + debounce GitHub save
   useEffect(() => {
     if (isFirst.current) { isFirst.current = false; return; }
-    // Also keep local backup
-    try { localStorage.setItem("raksa_finance_backup", JSON.stringify(transactions)); } catch(e){}
+
+    // 1. Save to localStorage immediately (instant, never lost)
+    try { localStorage.setItem(LOCAL_KEY, JSON.stringify(transactions)); } catch(e){}
+
+    // 2. Debounce GitHub save by 1.5s
     clearTimeout(saveTimer.current);
-    setSyncStatus("saving");
+    setSyncStatus("syncing");
+    setSyncMsg("Saving...");
+
     saveTimer.current = setTimeout(async () => {
-      const newSha = await saveToGitHub(transactions, sha);
-      setSha(newSha);
-      setSyncStatus("synced");
-      showToast("Saved to GitHub ✓");
-    }, 1200);
+      try {
+        // Always fetch latest SHA before saving to avoid conflicts
+        const latest = await ghGet();
+        const currentSha = latest?.sha || latestSha.current;
+        const newSha = await ghPut(latestTxn.current, currentSha);
+        setSha(newSha);
+        localStorage.setItem(SHA_KEY, newSha);
+        setSyncStatus("saved");
+        setSyncMsg(`✅ Saved to GitHub · ${latestTxn.current.length} transactions`);
+        showToast("Saved to GitHub ✓");
+      } catch(e) {
+        setSyncStatus("error");
+        setSyncMsg("⚠ GitHub save failed — data safe in local cache");
+        showToast("Saved locally (GitHub failed)", "#ff8906");
+      }
+    }, 1500);
   }, [transactions]);
 
   // ── Monthly ──
@@ -138,14 +194,7 @@ export default function App() {
     }; r.readAsText(file); e.target.value="";
   }
 
-  const statusMap = {
-    loading: { icon:"🔄", label:"Loading from GitHub...", color:"#ff8906" },
-    saving:  { icon:"🔄", label:"Saving to GitHub...",    color:"#ff8906" },
-    synced:  { icon:"✅", label:"Synced with GitHub",      color:"#2cb67d" },
-    new:     { icon:"🆕", label:"New file — add a transaction to save", color:"#a7a9be" },
-  };
-  const st = statusMap[syncStatus] || statusMap.synced;
-
+  const syncColor = { idle:"#a7a9be", syncing:"#ff8906", saved:"#2cb67d", error:"#f25f4c" }[syncStatus];
   const tabs = [{id:"dashboard",label:"Overview"},{id:"report",label:"Monthly"},{id:"yearly",label:"Yearly"},{id:"all",label:"History"}];
 
   return (
@@ -187,7 +236,7 @@ export default function App() {
         @keyframes fadeup{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
         .import-wrap{position:relative;overflow:hidden;flex:1}
         .import-wrap input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
-        .pulse{animation:pulse 1.5s ease infinite}
+        .pulse{animation:pulse 1.2s ease infinite}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
       `}</style>
 
@@ -198,8 +247,8 @@ export default function App() {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
             <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#ff8906"}}>RAKSA</div>
-            <div style={{fontSize:10,color:st.color,marginTop:2}} className={syncStatus==="saving"||syncStatus==="loading"?"pulse":""}>
-              {st.icon} {st.label}
+            <div style={{fontSize:10,color:syncColor,marginTop:2}} className={syncStatus==="syncing"?"pulse":""}>
+              {syncMsg||"Finance Tracker · Phnom Penh"}
             </div>
           </div>
           <div style={{display:"flex",gap:8}}>
@@ -210,10 +259,6 @@ export default function App() {
               + Add
             </button>
           </div>
-        </div>
-        <div style={{marginTop:10,background:"#0f0e17",border:"1px solid #2e2d3d",borderRadius:8,padding:"8px 14px",fontSize:11,color:"#a7a9be",display:"flex",alignItems:"center",gap:8}}>
-          <span>🐙</span>
-          <span>Data stored at <span style={{color:"#fffffe"}}>github.com/craksa/raksa-finance/data/transactions.json</span> · accessible on any device</span>
         </div>
         <div style={{display:"flex",gap:8,marginTop:10}}>
           <button className="btn btn-ghost" style={{flex:1,fontSize:11,padding:"7px 10px"}} onClick={exportCSV}>↓ Export CSV</button>
@@ -239,7 +284,6 @@ export default function App() {
       </div>
 
       <div style={{padding:"0 20px 100px"}}>
-
         {activeTab==="dashboard"&&(
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
