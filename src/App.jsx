@@ -8,14 +8,24 @@ const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov
 const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const now = new Date();
 
-// JSONBin config
-const BIN_ID  = "6a2697fbf5f4af5e29ca84e1";
+// ── Users & their own JSONBin IDs ──
+// Each user has a separate bin so data is fully isolated
+const USERS = {
+  raksa: {
+    password: "Cambodia!12",
+    binId: "6a2697fbf5f4af5e29ca84e1", // existing bin
+    displayName: "Raksa",
+  },
+  sredy: {
+    password: "Cambodia!12",
+    binId: "6a26a3e4da38895dfe99453b",
+    displayName: "Sredy",
+  },
+};
 const API_KEY = "$2a$10$tTp7PjjPVO1QFDTjVhHCruEJCsak1ermn74S9RSJEjfESYTUOk9hy";
-const BIN_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
-const LOCAL_KEY = "raksa_txn_v5";
 
-async function loadBin() {
-  const res = await fetch(BIN_URL + "/latest", {
+async function loadBin(binId) {
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
     headers: { "X-Master-Key": API_KEY, "X-Bin-Meta": "false" }
   });
   if (!res.ok) throw new Error("Load failed");
@@ -23,8 +33,8 @@ async function loadBin() {
   return Array.isArray(json) ? json : (json.transactions || []);
 }
 
-async function saveBin(transactions) {
-  const res = await fetch(BIN_URL, {
+async function saveBin(binId, transactions) {
+  const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", "X-Master-Key": API_KEY },
     body: JSON.stringify({ transactions })
@@ -35,7 +45,90 @@ async function saveBin(transactions) {
 function fmtUSD(n) { return "$" + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
 function fmtKHR(n) { return "៛" + Math.round(n*4100).toLocaleString(); }
 
+// ── Login Screen ──
+function LoginScreen({ onLogin, error }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0f0e17",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'DM Mono','Courier New',monospace"}}>
+      <div style={{width:"100%",maxWidth:360}}>
+        <div style={{textAlign:"center",marginBottom:40}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:36,fontWeight:800,color:"#ff8906",letterSpacing:-1}}>RAKSA</div>
+          <div style={{fontSize:12,color:"#a7a9be",marginTop:6}}>Finance Tracker · Phnom Penh</div>
+        </div>
+        <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
+          <div style={{fontSize:14,fontWeight:500,marginBottom:20,color:"#fffffe"}}>Sign In</div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <input
+              style={{background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 14px",outline:"none",width:"100%",boxSizing:"border-box"}}
+              placeholder="Username"
+              value={username}
+              onChange={e=>setUsername(e.target.value.toLowerCase())}
+              onKeyDown={e=>e.key==="Enter"&&onLogin(username,password)}
+              autoCapitalize="none"
+            />
+            <div style={{position:"relative"}}>
+              <input
+                style={{background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 40px 10px 14px",outline:"none",width:"100%",boxSizing:"border-box"}}
+                type={showPw?"text":"password"}
+                placeholder="Password"
+                value={password}
+                onChange={e=>setPassword(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&onLogin(username,password)}
+              />
+              <button onClick={()=>setShowPw(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:13}}>
+                {showPw?"Hide":"Show"}
+              </button>
+            </div>
+            {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
+            <button
+              onClick={()=>onLogin(username,password)}
+              style={{background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:6,padding:"12px",fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}
+            >
+              Sign In
+            </button>
+          </div>
+        </div>
+        <div style={{textAlign:"center",fontSize:11,color:"#a7a9be",marginTop:20}}>
+          Personal finance tracker · Private & secure
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ──
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("raksa_user")) || null; } catch(e) { return null; }
+  });
+  const [loginError, setLoginError] = useState("");
+
+  function handleLogin(username, password) {
+    const user = USERS[username.toLowerCase()];
+    if (!user) { setLoginError("User not found"); return; }
+    if (user.password !== password) { setLoginError("Incorrect password"); return; }
+    const session = { username: username.toLowerCase(), displayName: user.displayName, binId: user.binId };
+    sessionStorage.setItem("raksa_user", JSON.stringify(session));
+    setCurrentUser(session);
+    setLoginError("");
+  }
+
+  function handleLogout() {
+    sessionStorage.removeItem("raksa_user");
+    setCurrentUser(null);
+  }
+
+  if (!currentUser) return <LoginScreen onLogin={handleLogin} error={loginError} />;
+  return <Dashboard user={currentUser} onLogout={handleLogout} />;
+}
+
+// ── Dashboard ──
+function Dashboard({ user, onLogout }) {
+  const LOCAL_KEY = `raksa_txn_${user.username}`;
+
   const [transactions, setTransactions] = useState(() => {
     try { const c = localStorage.getItem(LOCAL_KEY); return c ? JSON.parse(c) : []; } catch(e) { return []; }
   });
@@ -62,20 +155,17 @@ export default function App() {
     (async () => {
       setSyncStatus("loading");
       try {
-        const data = await loadBin();
-        // Use whichever has more data — cloud or local
+        const data = await loadBin(user.binId);
         if (data.length >= latestTxn.current.length) {
           setTransactions(data);
           localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
         }
         setSyncStatus("synced");
-      } catch(e) {
-        setSyncStatus("offline");
-      }
+      } catch(e) { setSyncStatus("offline"); }
     })();
   }, []);
 
-  // Save on change — localStorage instantly, JSONBin debounced
+  // Save on change
   useEffect(() => {
     if (isFirst.current) { isFirst.current = false; return; }
     try { localStorage.setItem(LOCAL_KEY, JSON.stringify(transactions)); } catch(e){}
@@ -83,7 +173,7 @@ export default function App() {
     setSyncStatus("saving");
     saveTimer.current = setTimeout(async () => {
       try {
-        await saveBin(latestTxn.current);
+        await saveBin(user.binId, latestTxn.current);
         setSyncStatus("synced");
         showToast("Saved ✓");
       } catch(e) {
@@ -127,7 +217,7 @@ export default function App() {
     const h="Date,Type,Category,Amount (USD),Note";
     const rows=[...transactions].sort((a,b)=>new Date(a.date)-new Date(b.date)).map(t=>`${t.date},${t.type},${t.category},${t.amount},"${(t.note||"").replace(/"/g,'""')}"`);
     const blob=new Blob([[h,...rows].join("\n")],{type:"text/csv"});
-    const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`raksa_finance_${selectedYear}.csv`; a.click(); URL.revokeObjectURL(url);
+    const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`${user.username}_finance_${selectedYear}.csv`; a.click(); URL.revokeObjectURL(url);
     showToast("CSV exported ✓");
   }
 
@@ -144,9 +234,9 @@ export default function App() {
   }
 
   const syncMap = {
-    loading: { label:"Loading from cloud...", color:"#ff8906" },
-    saving:  { label:"Saving to cloud...",    color:"#ff8906" },
-    synced:  { label:`☁️ Cloud synced · ${transactions.length} transactions`, color:"#2cb67d" },
+    loading: { label:"Loading...", color:"#ff8906" },
+    saving:  { label:"Saving...", color:"#ff8906" },
+    synced:  { label:`☁️ Synced · ${transactions.length} transactions`, color:"#2cb67d" },
     offline: { label:"💾 Offline — data safe locally", color:"#a7a9be" },
   };
   const st = syncMap[syncStatus] || syncMap.synced;
@@ -206,7 +296,11 @@ export default function App() {
               {st.label}
             </div>
           </div>
-          <div style={{display:"flex",gap:8}}>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:12,fontWeight:500,color:"#fffffe"}}>{user.displayName}</div>
+              <button onClick={onLogout} style={{fontSize:10,color:"#a7a9be",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Sign out</button>
+            </div>
             <button className="btn btn-ghost" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setCurrency(c=>c==="USD"?"KHR":"USD")}>
               {currency==="USD"?"$ USD":"៛ KHR"}
             </button>
@@ -281,12 +375,10 @@ export default function App() {
             <div className="card">
               <div style={{fontSize:12,color:"#a7a9be",marginBottom:14,textTransform:"uppercase",letterSpacing:1}}>Expense by Category</div>
               {catTotals.length===0?<div style={{textAlign:"center",color:"#a7a9be",padding:"24px 0",fontSize:13}}>No expense data</div>
-                :catTotals.map(c=>(
-                  <div key={c.cat} style={{marginBottom:14}}>
-                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:5}}><span>{c.cat}</span><span style={{color:"#f25f4c"}}>{fmt(c.total)}</span></div>
-                    <div style={{background:"#12111f",borderRadius:4,height:6}}><div className="bar-fill" style={{width:`${totalExpense?(c.total/totalExpense)*100:0}%`,height:6,background:"#f25f4c"}}/></div>
-                  </div>
-                ))}
+                :catTotals.map(c=>(<div key={c.cat} style={{marginBottom:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:5}}><span>{c.cat}</span><span style={{color:"#f25f4c"}}>{fmt(c.total)}</span></div>
+                  <div style={{background:"#12111f",borderRadius:4,height:6}}><div className="bar-fill" style={{width:`${totalExpense?(c.total/totalExpense)*100:0}%`,height:6,background:"#f25f4c"}}/></div>
+                </div>))}
             </div>
             <div className="card">
               <div style={{fontSize:12,color:"#a7a9be",marginBottom:14,textTransform:"uppercase",letterSpacing:1}}>Income Sources</div>
@@ -327,15 +419,13 @@ export default function App() {
             <div className="card">
               <div style={{fontSize:12,color:"#a7a9be",marginBottom:16,textTransform:"uppercase",letterSpacing:1}}>Month-by-Month {selectedYear}</div>
               <div style={{display:"flex",gap:4,alignItems:"flex-end",height:110}}>
-                {mData.map((m,i)=>(
-                  <div key={i} className="chart-bar-wrap">
-                    <div style={{display:"flex",gap:2,alignItems:"flex-end",height:88}}>
-                      <div style={{width:9,borderRadius:"2px 2px 0 0",background:"#2cb67d",height:`${m.income?(m.income/maxBar)*88:0}px`,minHeight:m.income?2:0}}/>
-                      <div style={{width:9,borderRadius:"2px 2px 0 0",background:"#f25f4c",height:`${m.expense?(m.expense/maxBar)*88:0}px`,minHeight:m.expense?2:0}}/>
-                    </div>
-                    <div style={{fontSize:8,color:"#a7a9be",textAlign:"center"}}>{m.month}</div>
+                {mData.map((m,i)=>(<div key={i} className="chart-bar-wrap">
+                  <div style={{display:"flex",gap:2,alignItems:"flex-end",height:88}}>
+                    <div style={{width:9,borderRadius:"2px 2px 0 0",background:"#2cb67d",height:`${m.income?(m.income/maxBar)*88:0}px`,minHeight:m.income?2:0}}/>
+                    <div style={{width:9,borderRadius:"2px 2px 0 0",background:"#f25f4c",height:`${m.expense?(m.expense/maxBar)*88:0}px`,minHeight:m.expense?2:0}}/>
                   </div>
-                ))}
+                  <div style={{fontSize:8,color:"#a7a9be",textAlign:"center"}}>{m.month}</div>
+                </div>))}
               </div>
               <div style={{display:"flex",gap:16,marginTop:10,fontSize:11}}><span style={{color:"#2cb67d"}}>■ Income</span><span style={{color:"#f25f4c"}}>■ Expense</span></div>
             </div>
@@ -344,14 +434,12 @@ export default function App() {
               <table className="yr-table">
                 <thead><tr><th>Month</th><th style={{textAlign:"right"}}>Income</th><th style={{textAlign:"right"}}>Expense</th><th style={{textAlign:"right"}}>Balance</th></tr></thead>
                 <tbody>
-                  {mData.map((m,i)=>(
-                    <tr key={i} style={{opacity:m.count===0?0.3:1,cursor:m.count>0?"pointer":"default"}} onClick={()=>{if(m.count>0){setSelectedMonth(i);setActiveTab("dashboard");}}}>
-                      <td style={{color:i===now.getMonth()&&selectedYear===now.getFullYear()?"#ff8906":"#fffffe"}}>{MONTHS_FULL[i]}</td>
-                      <td style={{textAlign:"right",color:"#2cb67d"}}>{m.income>0?fmt(m.income):"—"}</td>
-                      <td style={{textAlign:"right",color:"#f25f4c"}}>{m.expense>0?fmt(m.expense):"—"}</td>
-                      <td style={{textAlign:"right",color:m.balance>0?"#2cb67d":m.balance<0?"#f25f4c":"#a7a9be",fontWeight:500}}>{m.count>0?(m.balance>=0?"+":"")+fmt(m.balance):"—"}</td>
-                    </tr>
-                  ))}
+                  {mData.map((m,i)=>(<tr key={i} style={{opacity:m.count===0?0.3:1,cursor:m.count>0?"pointer":"default"}} onClick={()=>{if(m.count>0){setSelectedMonth(i);setActiveTab("dashboard");}}}>
+                    <td style={{color:i===now.getMonth()&&selectedYear===now.getFullYear()?"#ff8906":"#fffffe"}}>{MONTHS_FULL[i]}</td>
+                    <td style={{textAlign:"right",color:"#2cb67d"}}>{m.income>0?fmt(m.income):"—"}</td>
+                    <td style={{textAlign:"right",color:"#f25f4c"}}>{m.expense>0?fmt(m.expense):"—"}</td>
+                    <td style={{textAlign:"right",color:m.balance>0?"#2cb67d":m.balance<0?"#f25f4c":"#a7a9be",fontWeight:500}}>{m.count>0?(m.balance>=0?"+":"")+fmt(m.balance):"—"}</td>
+                  </tr>))}
                   <tr style={{borderTop:"2px solid #ff890644"}}>
                     <td style={{color:"#ff8906",fontWeight:700,paddingTop:12}}>TOTAL</td>
                     <td style={{textAlign:"right",color:"#2cb67d",fontWeight:600,paddingTop:12}}>{fmt(yInc)}</td>
@@ -371,18 +459,6 @@ export default function App() {
                 <div style={{fontSize:10,color:"#f25f4c",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Hardest Month</div>
                 {worstMo?<><div className="stat-value" style={{fontSize:15,color:"#f25f4c"}}>{worstMo.month}</div><div style={{fontSize:11,color:"#a7a9be",marginTop:4}}>{fmt(Math.abs(worstMo.balance))}</div></>:<div style={{fontSize:12,color:"#a7a9be"}}>No data</div>}
               </div>
-            </div>
-            <div className="card">
-              <div style={{fontSize:12,color:"#a7a9be",marginBottom:14,textTransform:"uppercase",letterSpacing:1}}>Top Expense Categories</div>
-              {yCatTotals.length===0?<div style={{textAlign:"center",color:"#a7a9be",padding:"20px 0",fontSize:13}}>No data for {selectedYear}</div>
-                :yCatTotals.map(c=>(
-                  <div key={c.cat} style={{marginBottom:14}}>
-                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:5}}>
-                      <span>{c.cat}</span><div style={{display:"flex",gap:10}}><span style={{color:"#a7a9be",fontSize:11}}>{yExp?Math.round((c.total/yExp)*100):0}%</span><span style={{color:"#f25f4c"}}>{fmt(c.total)}</span></div>
-                    </div>
-                    <div style={{background:"#12111f",borderRadius:4,height:6}}><div className="bar-fill" style={{width:`${yExp?(c.total/yExp)*100:0}%`,height:6,background:"#f25f4c"}}/></div>
-                  </div>
-                ))}
             </div>
             <div className="card" style={{borderColor:"#ff890622",background:"#ff890608"}}>
               <div style={{fontSize:12,color:"#ff8906",marginBottom:14,textTransform:"uppercase",letterSpacing:1}}>Annual Summary {selectedYear}</div>
@@ -423,11 +499,9 @@ export default function App() {
           <div className="modal">
             <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>{editId?"Edit Transaction":"New Transaction"}</div>
             <div className="type-toggle" style={{marginBottom:16}}>
-              {["income","expense"].map(type=>(
-                <button key={type} className={`type-btn ${type} ${form.type===type?"active":""}`} onClick={()=>setForm(f=>({...f,type,category:""}))}>
-                  {type.charAt(0).toUpperCase()+type.slice(1)}
-                </button>
-              ))}
+              {["income","expense"].map(type=>(<button key={type} className={`type-btn ${type} ${form.type===type?"active":""}`} onClick={()=>setForm(f=>({...f,type,category:""}))}>
+                {type.charAt(0).toUpperCase()+type.slice(1)}
+              </button>))}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               <select className="input" value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
