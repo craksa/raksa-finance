@@ -7,13 +7,46 @@ const CATEGORIES = {
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const now = new Date();
-const KEY = "raksa_finance_v4";
+
+// GitHub config
+const GITHUB_OWNER = "craksa";
+const GITHUB_REPO  = "raksa-finance";
+const GITHUB_FILE  = "data/transactions.json";
+const GITHUB_TOKEN = "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";
+const GITHUB_API   = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}`;
+
+async function loadFromGitHub() {
+  try {
+    const res = await fetch(GITHUB_API, {
+      headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: "application/vnd.github.v3+json" }
+    });
+    if (!res.ok) return { data: [], sha: null };
+    const json = await res.json();
+    const data = JSON.parse(atob(json.content));
+    return { data, sha: json.sha };
+  } catch(e) { return { data: [], sha: null }; }
+}
+
+async function saveToGitHub(transactions, sha) {
+  try {
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(transactions, null, 2))));
+    const body = { message: "Update finance data", content, ...(sha ? { sha } : {}) };
+    const res = await fetch(GITHUB_API, {
+      method: "PUT",
+      headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const json = await res.json();
+    return json.content?.sha || sha;
+  } catch(e) { return sha; }
+}
 
 function fmtUSD(n) { return "$" + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
 function fmtKHR(n) { return "៛" + Math.round(n*4100).toLocaleString(); }
 
 export default function App() {
   const [transactions, setTransactions] = useState([]);
+  const [sha, setSha] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [currency, setCurrency] = useState("USD");
@@ -21,29 +54,38 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [form, setForm] = useState({ type:"income", category:"", amount:"", note:"", date:now.toISOString().split("T")[0] });
   const [editId, setEditId] = useState(null);
-  const [saved, setSaved] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("loading");
   const [toast, setToast] = useState(null);
   const isFirst = useRef(true);
+  const saveTimer = useRef(null);
 
   const fmt = n => currency === "USD" ? fmtUSD(n) : fmtKHR(n);
   const showToast = (msg, color="#2cb67d") => { setToast({msg,color}); setTimeout(()=>setToast(null),3000); };
 
-  // Load from localStorage on mount
+  // Load from GitHub on mount
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) setTransactions(JSON.parse(raw));
-      setSaved(true);
-    } catch(e) { setSaved(false); }
+    (async () => {
+      setSyncStatus("loading");
+      const { data, sha: fileSha } = await loadFromGitHub();
+      setTransactions(data);
+      setSha(fileSha);
+      setSyncStatus(fileSha ? "synced" : "new");
+    })();
   }, []);
 
-  // Save to localStorage on every change
+  // Auto-save to GitHub on change
   useEffect(() => {
     if (isFirst.current) { isFirst.current = false; return; }
-    try {
-      localStorage.setItem(KEY, JSON.stringify(transactions));
-      setSaved(true);
-    } catch(e) { setSaved(false); }
+    // Also keep local backup
+    try { localStorage.setItem("raksa_finance_backup", JSON.stringify(transactions)); } catch(e){}
+    clearTimeout(saveTimer.current);
+    setSyncStatus("saving");
+    saveTimer.current = setTimeout(async () => {
+      const newSha = await saveToGitHub(transactions, sha);
+      setSha(newSha);
+      setSyncStatus("synced");
+      showToast("Saved to GitHub ✓");
+    }, 1200);
   }, [transactions]);
 
   // ── Monthly ──
@@ -68,13 +110,13 @@ export default function App() {
   function handleSubmit() {
     if (!form.category||!form.amount||!form.date) return;
     const entry = {...form,amount:parseFloat(form.amount),id:editId||Date.now()};
-    if (editId) { setTransactions(p=>p.map(t=>t.id===editId?entry:t)); showToast("Updated ✓"); setEditId(null); }
-    else { setTransactions(p=>[entry,...p]); showToast("Added ✓"); }
+    if (editId) { setTransactions(p=>p.map(t=>t.id===editId?entry:t)); setEditId(null); }
+    else { setTransactions(p=>[entry,...p]); }
     setForm({type:"income",category:"",amount:"",note:"",date:now.toISOString().split("T")[0]});
     setShowForm(false);
   }
   function handleEdit(t) { setForm({type:t.type,category:t.category,amount:String(t.amount),note:t.note||"",date:t.date}); setEditId(t.id); setShowForm(true); setActiveTab("dashboard"); }
-  function handleDelete(id) { setTransactions(p=>p.filter(t=>t.id!==id)); showToast("Deleted","#f25f4c"); }
+  function handleDelete(id) { setTransactions(p=>p.filter(t=>t.id!==id)); }
 
   function exportCSV() {
     const h="Date,Type,Category,Amount (USD),Note";
@@ -83,6 +125,7 @@ export default function App() {
     const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`raksa_finance_${selectedYear}.csv`; a.click(); URL.revokeObjectURL(url);
     showToast("CSV exported ✓");
   }
+
   function importCSV(e) {
     const file=e.target.files[0]; if(!file)return;
     const r=new FileReader(); r.onload=ev=>{
@@ -94,6 +137,14 @@ export default function App() {
       } catch(_){ showToast("Import failed","#f25f4c"); }
     }; r.readAsText(file); e.target.value="";
   }
+
+  const statusMap = {
+    loading: { icon:"🔄", label:"Loading from GitHub...", color:"#ff8906" },
+    saving:  { icon:"🔄", label:"Saving to GitHub...",    color:"#ff8906" },
+    synced:  { icon:"✅", label:"Synced with GitHub",      color:"#2cb67d" },
+    new:     { icon:"🆕", label:"New file — add a transaction to save", color:"#a7a9be" },
+  };
+  const st = statusMap[syncStatus] || statusMap.synced;
 
   const tabs = [{id:"dashboard",label:"Overview"},{id:"report",label:"Monthly"},{id:"yearly",label:"Yearly"},{id:"all",label:"History"}];
 
@@ -136,17 +187,19 @@ export default function App() {
         @keyframes fadeup{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
         .import-wrap{position:relative;overflow:hidden;flex:1}
         .import-wrap input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+        .pulse{animation:pulse 1.5s ease infinite}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
       `}</style>
 
       {toast&&<div className="toast" style={{background:toast.color,color:"#fff"}}>{toast.msg}</div>}
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={{background:"#12111f",borderBottom:"1px solid #2e2d3d",padding:"14px 20px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
             <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#ff8906"}}>RAKSA</div>
-            <div style={{fontSize:10,color:saved?"#2cb67d":"#f25f4c",marginTop:2}}>
-              {saved ? "💾 Saved on this PC · "+transactions.length+" transactions" : "⚠ Storage unavailable"}
+            <div style={{fontSize:10,color:st.color,marginTop:2}} className={syncStatus==="saving"||syncStatus==="loading"?"pulse":""}>
+              {st.icon} {st.label}
             </div>
           </div>
           <div style={{display:"flex",gap:8}}>
@@ -158,16 +211,10 @@ export default function App() {
             </button>
           </div>
         </div>
-
-        {/* Storage info */}
-        <div style={{marginTop:12,background:"#0f0e17",border:"1px solid #2e2d3d",borderRadius:10,padding:"10px 14px",display:"flex",gap:12,alignItems:"center"}}>
-          <div style={{fontSize:20}}>🖥️</div>
-          <div style={{flex:1}}>
-            <div style={{fontSize:11,fontWeight:500,color:"#fffffe"}}>Saved on this PC</div>
-            <div style={{fontSize:10,color:"#a7a9be",marginTop:2}}>Data lives in your browser's localStorage · Same PC + same browser = data always here · Export CSV as backup</div>
-          </div>
+        <div style={{marginTop:10,background:"#0f0e17",border:"1px solid #2e2d3d",borderRadius:8,padding:"8px 14px",fontSize:11,color:"#a7a9be",display:"flex",alignItems:"center",gap:8}}>
+          <span>🐙</span>
+          <span>Data stored at <span style={{color:"#fffffe"}}>github.com/craksa/raksa-finance/data/transactions.json</span> · accessible on any device</span>
         </div>
-
         <div style={{display:"flex",gap:8,marginTop:10}}>
           <button className="btn btn-ghost" style={{flex:1,fontSize:11,padding:"7px 10px"}} onClick={exportCSV}>↓ Export CSV</button>
           <div className="import-wrap">
@@ -177,7 +224,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── Nav ── */}
+      {/* Nav */}
       <div style={{padding:"14px 20px",display:"flex",flexDirection:"column",gap:12}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <button className="nav-btn" onClick={()=>{ if(activeTab==="yearly"){setSelectedYear(y=>y-1);return;} if(selectedMonth===0){setSelectedMonth(11);setSelectedYear(y=>y-1);}else setSelectedMonth(m=>m-1); }}>‹</button>
@@ -193,7 +240,6 @@ export default function App() {
 
       <div style={{padding:"0 20px 100px"}}>
 
-        {/* ── OVERVIEW ── */}
         {activeTab==="dashboard"&&(
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
@@ -231,7 +277,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── MONTHLY ── */}
         {activeTab==="report"&&(
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
             <div className="card">
@@ -260,7 +305,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── YEARLY ── */}
         {activeTab==="yearly"&&(
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -352,7 +396,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── HISTORY ── */}
         {activeTab==="all"&&(
           <div className="card">
             <div style={{fontSize:12,color:"#a7a9be",marginBottom:14,textTransform:"uppercase",letterSpacing:1}}>
@@ -376,7 +419,6 @@ export default function App() {
         )}
       </div>
 
-      {/* ── Modal ── */}
       {showForm&&(
         <div className="overlay" onClick={e=>e.target===e.currentTarget&&setShowForm(false)}>
           <div className="modal">
