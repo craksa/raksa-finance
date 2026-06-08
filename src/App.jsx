@@ -102,7 +102,7 @@ function LoginScreen({ onLogin, error }) {
 // ── Main App ──
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem("raksa_user")) || null; } catch(e) { return null; }
+    try { return JSON.parse(sessionStorage.getItem("_user")) || null; } catch(e) { return null; }
   });
   const [loginError, setLoginError] = useState("");
 
@@ -111,13 +111,13 @@ export default function App() {
     if (!user) { setLoginError("User not found"); return; }
     if (user.password !== password) { setLoginError("Incorrect password"); return; }
     const session = { username: username.toLowerCase(), displayName: user.displayName, binId: user.binId };
-    sessionStorage.setItem("raksa_user", JSON.stringify(session));
+    sessionStorage.setItem("_user", JSON.stringify(session));
     setCurrentUser(session);
     setLoginError("");
   }
 
   function handleLogout() {
-    sessionStorage.removeItem("raksa_user");
+    sessionStorage.removeItem("_user");
     setCurrentUser(null);
   }
 
@@ -127,7 +127,7 @@ export default function App() {
 
 // ── Dashboard ──
 function Dashboard({ user, onLogout }) {
-  const LOCAL_KEY = `raksa_txn_${user.username}`;
+  const LOCAL_KEY = `_txn_${user.username}`;
 
   const [transactions, setTransactions] = useState(() => {
     try { const c = localStorage.getItem(LOCAL_KEY); return c ? JSON.parse(c) : []; } catch(e) { return []; }
@@ -291,7 +291,7 @@ function Dashboard({ user, onLogout }) {
       <div style={{background:"#12111f",borderBottom:"1px solid #2e2d3d",padding:"14px 20px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#ff8906"}}>RAKSA</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#ff8906"}}>Income and Expense Reports</div>
             <div style={{fontSize:10,color:st.color,marginTop:2}} className={syncStatus==="saving"||syncStatus==="loading"?"pulse":""}>
               {st.label}
             </div>
