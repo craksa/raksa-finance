@@ -18,8 +18,8 @@ const USERS = {
   },
   sreydy: {
     password: "Cambodia!12",
-    binId: "6a26a3e4da38895dfe99453b",
-    displayName: "Sredy",
+    binId: "6a284518da38895dfea18d22",
+    displayName: "Sreydy",
   },
 };
 const API_KEY = "$2a$10$tTp7PjjPVO1QFDTjVhHCruEJCsak1ermn74S9RSJEjfESYTUOk9hy";
@@ -55,7 +55,7 @@ function LoginScreen({ onLogin, error }) {
     <div style={{minHeight:"100vh",background:"#0f0e17",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'DM Mono','Courier New',monospace"}}>
       <div style={{width:"100%",maxWidth:360}}>
         <div style={{textAlign:"center",marginBottom:40}}>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:36,fontWeight:800,color:"#ff8906",letterSpacing:-1}}>RAKSA</div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:36,fontWeight:800,color:"#ff8906",letterSpacing:-1}}>Incomes and Expenses</div>
           <div style={{fontSize:12,color:"#a7a9be",marginTop:6}}>Finance Tracker · Phnom Penh</div>
         </div>
         <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
@@ -295,7 +295,7 @@ function Dashboard({ user, onLogout }) {
       <div style={{background:"#12111f",borderBottom:"1px solid #2e2d3d",padding:"14px 20px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#ff8906"}}>RAKSA</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#ff8906"}}>Incomes and Expenses</div>
             <div style={{fontSize:10,color:st.color,marginTop:2}} className={syncStatus==="saving"||syncStatus==="loading"?"pulse":""}>
               {st.label}
             </div>
