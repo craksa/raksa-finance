@@ -16,10 +16,10 @@ const USERS = {
     binId: "6a2697fbf5f4af5e29ca84e1", // existing bin
     displayName: "Raksa",
   },
-  sreydy: {
+  sredy: {
     password: "Cambodia!12",
     binId: "6a26a3e4da38895dfe99453b",
-    displayName: "Sreydy",
+    displayName: "Sredy",
   },
 };
 const API_KEY = "$2a$10$tTp7PjjPVO1QFDTjVhHCruEJCsak1ermn74S9RSJEjfESYTUOk9hy";
@@ -55,7 +55,7 @@ function LoginScreen({ onLogin, error }) {
     <div style={{minHeight:"100vh",background:"#0f0e17",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'DM Mono','Courier New',monospace"}}>
       <div style={{width:"100%",maxWidth:360}}>
         <div style={{textAlign:"center",marginBottom:40}}>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:36,fontWeight:800,color:"#ff8906",letterSpacing:-1}}>Income and Expense Reports</div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:36,fontWeight:800,color:"#ff8906",letterSpacing:-1}}>RAKSA</div>
           <div style={{fontSize:12,color:"#a7a9be",marginTop:6}}>Finance Tracker · Phnom Penh</div>
         </div>
         <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
@@ -102,7 +102,7 @@ function LoginScreen({ onLogin, error }) {
 // ── Main App ──
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem("_user")) || null; } catch(e) { return null; }
+    try { return JSON.parse(sessionStorage.getItem("raksa_user")) || null; } catch(e) { return null; }
   });
   const [loginError, setLoginError] = useState("");
 
@@ -111,13 +111,13 @@ export default function App() {
     if (!user) { setLoginError("User not found"); return; }
     if (user.password !== password) { setLoginError("Incorrect password"); return; }
     const session = { username: username.toLowerCase(), displayName: user.displayName, binId: user.binId };
-    sessionStorage.setItem("_user", JSON.stringify(session));
+    sessionStorage.setItem("raksa_user", JSON.stringify(session));
     setCurrentUser(session);
     setLoginError("");
   }
 
   function handleLogout() {
-    sessionStorage.removeItem("_user");
+    sessionStorage.removeItem("raksa_user");
     setCurrentUser(null);
   }
 
@@ -127,7 +127,7 @@ export default function App() {
 
 // ── Dashboard ──
 function Dashboard({ user, onLogout }) {
-  const LOCAL_KEY = `_txn_${user.username}`;
+  const LOCAL_KEY = `raksa_txn_${user.username}`;
 
   const [transactions, setTransactions] = useState(() => {
     try { const c = localStorage.getItem(LOCAL_KEY); return c ? JSON.parse(c) : []; } catch(e) { return []; }
@@ -165,13 +165,17 @@ function Dashboard({ user, onLogout }) {
     })();
   }, []);
 
-  // Save on change
+  // Save on change — only when data truly changes, debounced 8s to save API calls
+  const lastSavedJson = useRef(JSON.stringify(transactions));
   useEffect(() => {
     if (isFirst.current) { isFirst.current = false; return; }
-    try { localStorage.setItem(LOCAL_KEY, JSON.stringify(transactions)); } catch(e){}
+    const newJson = JSON.stringify(transactions);
+    if (newJson === lastSavedJson.current) return; // skip if nothing changed
+    lastSavedJson.current = newJson;
+    try { localStorage.setItem(LOCAL_KEY, newJson); } catch(e){} // instant local save
     clearTimeout(saveTimer.current);
-    setSyncStatus("saving");
     saveTimer.current = setTimeout(async () => {
+      setSyncStatus("saving");
       try {
         await saveBin(user.binId, latestTxn.current);
         setSyncStatus("synced");
@@ -180,7 +184,7 @@ function Dashboard({ user, onLogout }) {
         setSyncStatus("offline");
         showToast("Saved locally (cloud failed)", "#ff8906");
       }
-    }, 1500);
+    }, 8000); // 8s debounce = max ~1 API call per 8s per user
   }, [transactions]);
 
   // ── Monthly ──
@@ -291,7 +295,7 @@ function Dashboard({ user, onLogout }) {
       <div style={{background:"#12111f",borderBottom:"1px solid #2e2d3d",padding:"14px 20px"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#ff8906"}}>Income and Expense Reports</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#ff8906"}}>RAKSA</div>
             <div style={{fontSize:10,color:st.color,marginTop:2}} className={syncStatus==="saving"||syncStatus==="loading"?"pulse":""}>
               {st.label}
             </div>
