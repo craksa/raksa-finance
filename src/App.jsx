@@ -16,7 +16,7 @@ const USERS = {
     binId: "6a2697fbf5f4af5e29ca84e1", // existing bin
     displayName: "Raksa",
   },
-  sredy: {
+  sreydy: {
     password: "Cambodia!12",
     binId: "6a26a3e4da38895dfe99453b",
     displayName: "Sredy",
