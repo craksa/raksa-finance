@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 
 const CATEGORIES = {
   income: ["Salary", "Freelance", "Bonus", "Investment", "Other Income"],
-  expense: ["Food & Dining", "Transport", "Utilities", "Shopping", "Health", "Entertainment", "Rent", "Savings", "Other"],
+  expense: ["Food & Dining", "Transport", "Utilities", "Shopping", "Health", "Entertainment", "Rent", "Savings", "Investment","Other"],
 };
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
