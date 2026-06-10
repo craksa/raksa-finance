@@ -9,8 +9,23 @@ const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov
 const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const now = new Date();
 
+// Username → email mapping (private app, fixed user set)
+const USERNAME_MAP = {
+  raksa:  { email: "raksask90@gmail.com",    display: "Raksa" },
+  dara:   { email: "dara@gmail.com",         display: "Dara" },
+  sreydy: { email: "raksa.chou99@gmail.com", display: "Sreydy" },
+};
+
 function fmtUSD(n) { return "$" + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
 function fmtKHR(n) { return "៛" + Math.round(n * 4100).toLocaleString(); }
+
+function getDisplayName(session) {
+  const meta = session?.user?.user_metadata?.username;
+  if (meta) return meta.charAt(0).toUpperCase() + meta.slice(1);
+  const email = session?.user?.email || "";
+  const match = Object.entries(USERNAME_MAP).find(([, v]) => v.email === email);
+  return match ? match[1].display : email.split("@")[0];
+}
 
 // ── Shared auth shell ──
 function AuthShell({ children, subtitle }) {
@@ -33,16 +48,18 @@ const authInp = {background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,
 
 // ── Login Screen ──
 function LoginScreen({ onSwitch }) {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleLogin() {
-    if (!email || !password) { setError("Please fill in all fields"); return; }
+    if (!username || !password) { setError("Please fill in all fields"); return; }
+    const user = USERNAME_MAP[username.toLowerCase().trim()];
+    if (!user) { setError("User not found"); return; }
     setLoading(true); setError("");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email: user.email, password });
     setLoading(false);
     if (error) setError(error.message);
   }
@@ -52,7 +69,7 @@ function LoginScreen({ onSwitch }) {
       <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
         <div style={{fontSize:14,fontWeight:500,marginBottom:20,color:"#fffffe"}}>Sign In</div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          <input style={authInp} type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} autoCapitalize="none" autoComplete="email"/>
+          <input style={authInp} placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} autoCapitalize="none" autoComplete="username"/>
           <div style={{position:"relative"}}>
             <input style={{...authInp,padding:"10px 40px 10px 14px"}} type={showPw?"text":"password"} placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} autoComplete="current-password"/>
             <button onClick={()=>setShowPw(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:13}}>{showPw?"Hide":"Show"}</button>
@@ -61,65 +78,8 @@ function LoginScreen({ onSwitch }) {
           <button onClick={handleLogin} disabled={loading} style={{background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:6,padding:"12px",fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4,opacity:loading?0.7:1}}>
             {loading?"Signing in...":"Sign In"}
           </button>
-          <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
-            <button onClick={()=>onSwitch("forgot")} style={{background:"none",border:"none",color:"#a7a9be",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Forgot password?</button>
-            <button onClick={()=>onSwitch("signup")} style={{background:"none",border:"none",color:"#ff8906",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Create account →</button>
-          </div>
-        </div>
-      </div>
-    </AuthShell>
-  );
-}
-
-// ── Sign Up Screen ──
-function SignupScreen({ onSwitch }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [showPw, setShowPw] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSignup() {
-    if (!email || !password) { setError("Please fill in all fields"); return; }
-    if (password !== confirm) { setError("Passwords do not match"); return; }
-    if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
-    setLoading(true); setError("");
-    const { error } = await supabase.auth.signUp({ email, password });
-    setLoading(false);
-    if (error) { setError(error.message); return; }
-    setSuccess(true);
-  }
-
-  if (success) return (
-    <AuthShell subtitle="Account created!">
-      <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28,textAlign:"center"}}>
-        <div style={{fontSize:32,marginBottom:16}}>✉️</div>
-        <div style={{color:"#2cb67d",fontWeight:500,marginBottom:8}}>Check your email</div>
-        <div style={{color:"#a7a9be",fontSize:12,marginBottom:20}}>We sent a confirmation link to <strong style={{color:"#fffffe"}}>{email}</strong>. Click it to activate your account.</div>
-        <button onClick={()=>onSwitch("login")} style={{background:"none",border:"1px solid #2e2d3d",borderRadius:6,color:"#a7a9be",fontSize:13,cursor:"pointer",fontFamily:"inherit",padding:"10px 20px"}}>← Back to Sign In</button>
-      </div>
-    </AuthShell>
-  );
-
-  return (
-    <AuthShell subtitle="Create your account">
-      <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
-        <div style={{fontSize:14,fontWeight:500,marginBottom:20,color:"#fffffe"}}>Create Account</div>
-        <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          <input style={authInp} type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} autoCapitalize="none" autoComplete="email"/>
-          <div style={{position:"relative"}}>
-            <input style={{...authInp,padding:"10px 40px 10px 14px"}} type={showPw?"text":"password"} placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="new-password"/>
-            <button onClick={()=>setShowPw(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:13}}>{showPw?"Hide":"Show"}</button>
-          </div>
-          <input style={authInp} type="password" placeholder="Confirm password" value={confirm} onChange={e=>setConfirm(e.target.value)} autoComplete="new-password"/>
-          {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
-          <button onClick={handleSignup} disabled={loading} style={{background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:6,padding:"12px",fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4,opacity:loading?0.7:1}}>
-            {loading?"Creating account...":"Create Account"}
-          </button>
           <div style={{textAlign:"center",marginTop:4}}>
-            <button onClick={()=>onSwitch("login")} style={{background:"none",border:"none",color:"#a7a9be",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>← Back to Sign In</button>
+            <button onClick={()=>onSwitch("forgot")} style={{background:"none",border:"none",color:"#a7a9be",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Forgot password?</button>
           </div>
         </div>
       </div>
@@ -129,15 +89,17 @@ function SignupScreen({ onSwitch }) {
 
 // ── Forgot Password Screen ──
 function ForgotPasswordScreen({ onSwitch }) {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleReset() {
-    if (!email) { setError("Please enter your email"); return; }
+    if (!username) { setError("Please enter your username"); return; }
+    const user = USERNAME_MAP[username.toLowerCase().trim()];
+    if (!user) { setError("User not found"); return; }
     setLoading(true); setError("");
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
       redirectTo: window.location.origin + window.location.pathname,
     });
     setLoading(false);
@@ -150,7 +112,7 @@ function ForgotPasswordScreen({ onSwitch }) {
       <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28,textAlign:"center"}}>
         <div style={{fontSize:32,marginBottom:16}}>✉️</div>
         <div style={{color:"#2cb67d",fontWeight:500,marginBottom:8}}>Reset email sent</div>
-        <div style={{color:"#a7a9be",fontSize:12,marginBottom:20}}>We sent password reset instructions to <strong style={{color:"#fffffe"}}>{email}</strong>.</div>
+        <div style={{color:"#a7a9be",fontSize:12,marginBottom:20}}>Check your email for password reset instructions.</div>
         <button onClick={()=>onSwitch("login")} style={{background:"none",border:"1px solid #2e2d3d",borderRadius:6,color:"#a7a9be",fontSize:13,cursor:"pointer",fontFamily:"inherit",padding:"10px 20px"}}>← Back to Sign In</button>
       </div>
     </AuthShell>
@@ -160,9 +122,9 @@ function ForgotPasswordScreen({ onSwitch }) {
     <AuthShell subtitle="Reset your password">
       <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
         <div style={{fontSize:14,fontWeight:500,marginBottom:8,color:"#fffffe"}}>Forgot Password</div>
-        <div style={{fontSize:12,color:"#a7a9be",marginBottom:20}}>Enter your email and we'll send you a reset link.</div>
+        <div style={{fontSize:12,color:"#a7a9be",marginBottom:20}}>Enter your username and we'll send a reset link.</div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          <input style={authInp} type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleReset()} autoCapitalize="none"/>
+          <input style={authInp} placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleReset()} autoCapitalize="none"/>
           {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
           <button onClick={handleReset} disabled={loading} style={{background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:6,padding:"12px",fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4,opacity:loading?0.7:1}}>
             {loading?"Sending...":"Send Reset Email"}
@@ -251,7 +213,6 @@ export default function App() {
     </div>
   );
   if (authView === "login") return <LoginScreen onSwitch={setAuthView}/>;
-  if (authView === "signup") return <SignupScreen onSwitch={setAuthView}/>;
   if (authView === "forgot") return <ForgotPasswordScreen onSwitch={setAuthView}/>;
   if (!session) return <LoginScreen onSwitch={setAuthView}/>;
 
@@ -285,7 +246,6 @@ function Dashboard({ session, onLogout, forceChangePassword, onPasswordChanged }
   const fmt = n => currency === "USD" ? fmtUSD(n) : fmtKHR(n);
   const showToast = (msg, color="#2cb67d") => { setToast({msg,color}); setTimeout(()=>setToast(null),3000); };
 
-  // Load transactions from Supabase on mount
   useEffect(() => {
     (async () => {
       setSyncStatus("loading");
@@ -400,7 +360,7 @@ function Dashboard({ session, onLogout, forceChangePassword, onPasswordChanged }
   };
   const st = syncMap[syncStatus] || syncMap.synced;
   const tabs = [{id:"dashboard",label:"Overview"},{id:"report",label:"Monthly"},{id:"yearly",label:"Yearly"},{id:"all",label:"History"}];
-  const userEmail = session.user.email;
+  const displayName = getDisplayName(session);
 
   return (
     <div style={{minHeight:"100vh",background:"#0f0e17",fontFamily:"'DM Mono','Courier New',monospace",color:"#fffffe",overflowX:"hidden",width:"100%",maxWidth:"100vw",position:"relative"}}>
@@ -497,7 +457,7 @@ function Dashboard({ session, onLogout, forceChangePassword, onPasswordChanged }
           </div>
           <div className="header-actions">
             <div style={{textAlign:"right"}}>
-              <div style={{fontSize:12,fontWeight:500,color:"#fffffe",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userEmail}</div>
+              <div style={{fontSize:12,fontWeight:500,color:"#fffffe"}}>{displayName}</div>
               <div style={{display:"flex",gap:6,justifyContent:"flex-end",marginTop:2}}>
                 <button onClick={()=>setShowChangePw(true)} style={{fontSize:10,color:"#a7a9be",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Change pw</button>
                 <span style={{color:"#2e2d3d",fontSize:10}}>·</span>
