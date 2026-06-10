@@ -585,7 +585,7 @@ function Dashboard({ user, onLogout }) {
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Date</label>
-                <input className="input" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={{textAlign:"left",paddingLeft:14,width:"100%",maxWidth:"100%",boxSizing:"border-box",overflow:"hidden"}}/>
+                <input className="input" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={{textAlign:"left",width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Note <span style={{opacity:0.5}}>(optional)</span></label>
