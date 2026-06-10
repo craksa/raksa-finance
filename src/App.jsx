@@ -1,106 +1,223 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "./supabaseClient";
 
 const CATEGORIES = {
   income: ["Salary", "Freelance", "Bonus", "Investment", "Other Income"],
-  expense: ["Food & Dining", "Transport", "Utilities", "Shopping", "Health", "Entertainment", "Rent", "Savings", "Investment","Other"],
+  expense: ["Food & Dining", "Transport", "Utilities", "Shopping", "Health", "Entertainment", "Rent", "Savings", "Investment", "Other"],
 };
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const now = new Date();
 
-// ── Users & their own JSONBin IDs ──
-// Each user has a separate bin so data is fully isolated
-const USERS = {
-  raksa: {
-    password: "Cambodia!12",
-    binId: "6a2697fbf5f4af5e29ca84e1", // existing bin
-    displayName: "Raksa",
-  },
-  sreydy: {
-    password: "Cambodia!12",
-    binId: "6a284518da38895dfea18d22",
-    displayName: "Sreydy",
-  },
-  dara: {
-    password: "Cambodia!12",
-    binId: "6a28e111da38895dfea44c6b",
-    displayName: "Dara",
-  },
-};
-const API_KEY = "$2a$10$tTp7PjjPVO1QFDTjVhHCruEJCsak1ermn74S9RSJEjfESYTUOk9hy";
+function fmtUSD(n) { return "$" + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+function fmtKHR(n) { return "៛" + Math.round(n * 4100).toLocaleString(); }
 
-async function loadBin(binId) {
-  const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
-    headers: { "X-Master-Key": API_KEY, "X-Bin-Meta": "false" }
-  });
-  if (!res.ok) throw new Error("Load failed");
-  const json = await res.json();
-  const transactions = Array.isArray(json) ? json : (json.transactions || []);
-  const lastModified = Array.isArray(json) ? 0 : (json.lastModified || 0);
-  return { transactions, lastModified };
-}
-
-async function saveBin(binId, transactions, keepalive = false) {
-  const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", "X-Master-Key": API_KEY },
-    body: JSON.stringify({ transactions, lastModified: Date.now() }),
-    keepalive,
-  });
-  if (!res.ok) throw new Error("Save failed");
-}
-
-function fmtUSD(n) { return "$" + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
-function fmtKHR(n) { return "៛" + Math.round(n*4100).toLocaleString(); }
-
-// ── Login Screen ──
-function LoginScreen({ onLogin, error }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPw, setShowPw] = useState(false);
-
+// ── Shared auth shell ──
+function AuthShell({ children, subtitle }) {
   return (
     <div style={{minHeight:"100vh",background:"#0f0e17",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'DM Mono','Courier New',monospace"}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0}`}</style>
       <div style={{width:"100%",maxWidth:360}}>
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{fontFamily:"'Syne',sans-serif",fontSize:36,fontWeight:800,color:"#ff8906",letterSpacing:-1}}>Incomes and Expenses</div>
-          <div style={{fontSize:12,color:"#a7a9be",marginTop:6}}>Finance Tracker · Phnom Penh</div>
+          <div style={{fontSize:12,color:"#a7a9be",marginTop:6}}>{subtitle||"Finance Tracker · Phnom Penh"}</div>
         </div>
-        <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
-          <div style={{fontSize:14,fontWeight:500,marginBottom:20,color:"#fffffe"}}>Sign In</div>
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            <input
-              style={{background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 14px",outline:"none",width:"100%",boxSizing:"border-box"}}
-              placeholder="Username"
-              value={username}
-              onChange={e=>setUsername(e.target.value.toLowerCase())}
-              onKeyDown={e=>e.key==="Enter"&&onLogin(username,password)}
-              autoCapitalize="none"
-            />
-            <div style={{position:"relative"}}>
-              <input
-                style={{background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 40px 10px 14px",outline:"none",width:"100%",boxSizing:"border-box"}}
-                type={showPw?"text":"password"}
-                placeholder="Password"
-                value={password}
-                onChange={e=>setPassword(e.target.value)}
-                onKeyDown={e=>e.key==="Enter"&&onLogin(username,password)}
-              />
-              <button onClick={()=>setShowPw(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:13}}>
-                {showPw?"Hide":"Show"}
-              </button>
-            </div>
-            {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
-            <button
-              onClick={()=>onLogin(username,password)}
-              style={{background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:6,padding:"12px",fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}
-            >
-              Sign In
-            </button>
+        {children}
+        <div style={{textAlign:"center",fontSize:11,color:"#a7a9be",marginTop:20}}>Personal finance tracker · Private & secure</div>
+      </div>
+    </div>
+  );
+}
+
+const authInp = {background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"'DM Mono','Courier New',monospace",fontSize:13,padding:"10px 14px",outline:"none",width:"100%",boxSizing:"border-box"};
+
+// ── Login Screen ──
+function LoginScreen({ onSwitch }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleLogin() {
+    if (!email || !password) { setError("Please fill in all fields"); return; }
+    setLoading(true); setError("");
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (error) setError(error.message);
+  }
+
+  return (
+    <AuthShell>
+      <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
+        <div style={{fontSize:14,fontWeight:500,marginBottom:20,color:"#fffffe"}}>Sign In</div>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <input style={authInp} type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} autoCapitalize="none" autoComplete="email"/>
+          <div style={{position:"relative"}}>
+            <input style={{...authInp,padding:"10px 40px 10px 14px"}} type={showPw?"text":"password"} placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} autoComplete="current-password"/>
+            <button onClick={()=>setShowPw(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:13}}>{showPw?"Hide":"Show"}</button>
+          </div>
+          {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
+          <button onClick={handleLogin} disabled={loading} style={{background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:6,padding:"12px",fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4,opacity:loading?0.7:1}}>
+            {loading?"Signing in...":"Sign In"}
+          </button>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+            <button onClick={()=>onSwitch("forgot")} style={{background:"none",border:"none",color:"#a7a9be",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Forgot password?</button>
+            <button onClick={()=>onSwitch("signup")} style={{background:"none",border:"none",color:"#ff8906",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Create account →</button>
           </div>
         </div>
-        <div style={{textAlign:"center",fontSize:11,color:"#a7a9be",marginTop:20}}>
-          Personal finance tracker · Private & secure
+      </div>
+    </AuthShell>
+  );
+}
+
+// ── Sign Up Screen ──
+function SignupScreen({ onSwitch }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSignup() {
+    if (!email || !password) { setError("Please fill in all fields"); return; }
+    if (password !== confirm) { setError("Passwords do not match"); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    setLoading(true); setError("");
+    const { error } = await supabase.auth.signUp({ email, password });
+    setLoading(false);
+    if (error) { setError(error.message); return; }
+    setSuccess(true);
+  }
+
+  if (success) return (
+    <AuthShell subtitle="Account created!">
+      <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28,textAlign:"center"}}>
+        <div style={{fontSize:32,marginBottom:16}}>✉️</div>
+        <div style={{color:"#2cb67d",fontWeight:500,marginBottom:8}}>Check your email</div>
+        <div style={{color:"#a7a9be",fontSize:12,marginBottom:20}}>We sent a confirmation link to <strong style={{color:"#fffffe"}}>{email}</strong>. Click it to activate your account.</div>
+        <button onClick={()=>onSwitch("login")} style={{background:"none",border:"1px solid #2e2d3d",borderRadius:6,color:"#a7a9be",fontSize:13,cursor:"pointer",fontFamily:"inherit",padding:"10px 20px"}}>← Back to Sign In</button>
+      </div>
+    </AuthShell>
+  );
+
+  return (
+    <AuthShell subtitle="Create your account">
+      <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
+        <div style={{fontSize:14,fontWeight:500,marginBottom:20,color:"#fffffe"}}>Create Account</div>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <input style={authInp} type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} autoCapitalize="none" autoComplete="email"/>
+          <div style={{position:"relative"}}>
+            <input style={{...authInp,padding:"10px 40px 10px 14px"}} type={showPw?"text":"password"} placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="new-password"/>
+            <button onClick={()=>setShowPw(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:13}}>{showPw?"Hide":"Show"}</button>
+          </div>
+          <input style={authInp} type="password" placeholder="Confirm password" value={confirm} onChange={e=>setConfirm(e.target.value)} autoComplete="new-password"/>
+          {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
+          <button onClick={handleSignup} disabled={loading} style={{background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:6,padding:"12px",fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4,opacity:loading?0.7:1}}>
+            {loading?"Creating account...":"Create Account"}
+          </button>
+          <div style={{textAlign:"center",marginTop:4}}>
+            <button onClick={()=>onSwitch("login")} style={{background:"none",border:"none",color:"#a7a9be",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>← Back to Sign In</button>
+          </div>
+        </div>
+      </div>
+    </AuthShell>
+  );
+}
+
+// ── Forgot Password Screen ──
+function ForgotPasswordScreen({ onSwitch }) {
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function handleReset() {
+    if (!email) { setError("Please enter your email"); return; }
+    setLoading(true); setError("");
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname,
+    });
+    setLoading(false);
+    if (error) { setError(error.message); return; }
+    setSuccess(true);
+  }
+
+  if (success) return (
+    <AuthShell subtitle="Check your email">
+      <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28,textAlign:"center"}}>
+        <div style={{fontSize:32,marginBottom:16}}>✉️</div>
+        <div style={{color:"#2cb67d",fontWeight:500,marginBottom:8}}>Reset email sent</div>
+        <div style={{color:"#a7a9be",fontSize:12,marginBottom:20}}>We sent password reset instructions to <strong style={{color:"#fffffe"}}>{email}</strong>.</div>
+        <button onClick={()=>onSwitch("login")} style={{background:"none",border:"1px solid #2e2d3d",borderRadius:6,color:"#a7a9be",fontSize:13,cursor:"pointer",fontFamily:"inherit",padding:"10px 20px"}}>← Back to Sign In</button>
+      </div>
+    </AuthShell>
+  );
+
+  return (
+    <AuthShell subtitle="Reset your password">
+      <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
+        <div style={{fontSize:14,fontWeight:500,marginBottom:8,color:"#fffffe"}}>Forgot Password</div>
+        <div style={{fontSize:12,color:"#a7a9be",marginBottom:20}}>Enter your email and we'll send you a reset link.</div>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <input style={authInp} type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleReset()} autoCapitalize="none"/>
+          {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
+          <button onClick={handleReset} disabled={loading} style={{background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:6,padding:"12px",fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4,opacity:loading?0.7:1}}>
+            {loading?"Sending...":"Send Reset Email"}
+          </button>
+          <div style={{textAlign:"center",marginTop:4}}>
+            <button onClick={()=>onSwitch("login")} style={{background:"none",border:"none",color:"#a7a9be",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>← Back to Sign In</button>
+          </div>
+        </div>
+      </div>
+    </AuthShell>
+  );
+}
+
+// ── Change Password Modal ──
+function ChangePasswordModal({ force, onDone, onClose }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleChange() {
+    if (!password) { setError("Please enter a new password"); return; }
+    if (password !== confirm) { setError("Passwords do not match"); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    setLoading(true); setError("");
+    const { error } = await supabase.auth.updateUser({ password });
+    setLoading(false);
+    if (error) { setError(error.message); return; }
+    onDone();
+  }
+
+  return (
+    <div className="overlay" onClick={e=>e.target===e.currentTarget&&!force&&onClose()}>
+      <div className="modal">
+        <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,marginBottom:8}}>Change Password</div>
+        {force&&<div style={{fontSize:12,color:"#ff8906",marginBottom:20}}>Please set a new password to continue.</div>}
+        {!force&&<div style={{marginBottom:20}}/>}
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{position:"relative"}}>
+            <input
+              style={{background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 40px 10px 14px",width:"100%",outline:"none",boxSizing:"border-box"}}
+              type={showPw?"text":"password"} placeholder="New password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="new-password"
+            />
+            <button onClick={()=>setShowPw(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:13}}>{showPw?"Hide":"Show"}</button>
+          </div>
+          <input
+            style={{background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 14px",width:"100%",outline:"none",boxSizing:"border-box"}}
+            type="password" placeholder="Confirm new password" value={confirm} onChange={e=>setConfirm(e.target.value)} autoComplete="new-password"
+          />
+          {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
+        </div>
+        <div style={{display:"flex",gap:10,marginTop:20}}>
+          {!force&&<button className="btn btn-ghost" style={{flex:1,minWidth:0}} onClick={onClose}>Cancel</button>}
+          <button className="btn btn-primary" style={{flex:force?1:2,minWidth:0}} onClick={handleChange} disabled={loading}>{loading?"Saving...":"Update Password"}</button>
         </div>
       </div>
     </div>
@@ -109,166 +226,181 @@ function LoginScreen({ onLogin, error }) {
 
 // ── Main App ──
 export default function App() {
-  const [currentUser, setCurrentUser] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem("raksa_user")) || null; } catch(e) { return null; }
-  });
-  const [loginError, setLoginError] = useState("");
+  const [session, setSession] = useState(null);
+  const [authView, setAuthView] = useState("loading");
 
-  function handleLogin(username, password) {
-    const user = USERS[username.toLowerCase()];
-    if (!user) { setLoginError("User not found"); return; }
-    if (user.password !== password) { setLoginError("Incorrect password"); return; }
-    const session = { username: username.toLowerCase(), displayName: user.displayName, binId: user.binId };
-    sessionStorage.setItem("raksa_user", JSON.stringify(session));
-    setCurrentUser(session);
-    setLoginError("");
-  }
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setSession(session);
+      if (event === "PASSWORD_RECOVERY") {
+        setAuthView("recovery");
+      } else if (event === "INITIAL_SESSION") {
+        setAuthView(session ? null : "login");
+      } else if (event === "SIGNED_IN") {
+        setAuthView(prev => prev === "recovery" ? "recovery" : null);
+      } else if (event === "SIGNED_OUT") {
+        setAuthView("login");
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
-  function handleLogout() {
-    sessionStorage.removeItem("raksa_user");
-    setCurrentUser(null);
-  }
+  if (authView === "loading") return (
+    <div style={{minHeight:"100vh",background:"#0f0e17",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Mono','Courier New',monospace",color:"#a7a9be",fontSize:13}}>
+      Loading...
+    </div>
+  );
+  if (authView === "login") return <LoginScreen onSwitch={setAuthView}/>;
+  if (authView === "signup") return <SignupScreen onSwitch={setAuthView}/>;
+  if (authView === "forgot") return <ForgotPasswordScreen onSwitch={setAuthView}/>;
+  if (!session) return <LoginScreen onSwitch={setAuthView}/>;
 
-  if (!currentUser) return <LoginScreen onLogin={handleLogin} error={loginError} />;
-  return <Dashboard user={currentUser} onLogout={handleLogout} />;
+  return (
+    <Dashboard
+      session={session}
+      onLogout={() => supabase.auth.signOut()}
+      forceChangePassword={authView === "recovery"}
+      onPasswordChanged={() => setAuthView(null)}
+    />
+  );
 }
 
 // ── Dashboard ──
-function Dashboard({ user, onLogout }) {
-  const LOCAL_KEY = `raksa_txn_${user.username}`;
-
-  const [transactions, setTransactions] = useState(() => {
-    try { const c = localStorage.getItem(LOCAL_KEY); return c ? JSON.parse(c) : []; } catch(e) { return []; }
-  });
+function Dashboard({ session, onLogout, forceChangePassword, onPasswordChanged }) {
+  const [transactions, setTransactions] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [currency, setCurrency] = useState("USD");
   const [showForm, setShowForm] = useState(false);
+  const [showChangePw, setShowChangePw] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [form, setForm] = useState({ type:"income", category:"", amount:"", note:"", date:now.toISOString().split("T")[0] });
   const [editId, setEditId] = useState(null);
   const [syncStatus, setSyncStatus] = useState("loading");
   const [toast, setToast] = useState(null);
-  const isFirst = useRef(true);
-  const saveTimer = useRef(null);
-  const latestTxn = useRef(transactions);
-  const lastSavedJson = useRef(JSON.stringify(transactions));
+  const [showMigrationBanner, setShowMigrationBanner] = useState(false);
+
+  useEffect(() => { if (forceChangePassword) setShowChangePw(true); }, [forceChangePassword]);
 
   const fmt = n => currency === "USD" ? fmtUSD(n) : fmtKHR(n);
   const showToast = (msg, color="#2cb67d") => { setToast({msg,color}); setTimeout(()=>setToast(null),3000); };
 
-  useEffect(() => { latestTxn.current = transactions; }, [transactions]);
-
-  // Load from JSONBin on mount — cloud wins when its timestamp is newer
+  // Load transactions from Supabase on mount
   useEffect(() => {
     (async () => {
       setSyncStatus("loading");
-      try {
-        const { transactions: cloudTxn, lastModified: cloudTs } = await loadBin(user.binId);
-        const localTs = Number(localStorage.getItem(LOCAL_KEY + "_ts") || 0);
-        if (cloudTs >= localTs) {
-          setTransactions(cloudTxn);
-          localStorage.setItem(LOCAL_KEY, JSON.stringify(cloudTxn));
-          localStorage.setItem(LOCAL_KEY + "_ts", String(cloudTs));
-          lastSavedJson.current = JSON.stringify(cloudTxn); // prevent redundant re-upload
-        }
-        setSyncStatus("synced");
-      } catch(e) { setSyncStatus("offline"); }
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("date", { ascending: false });
+      if (error) { setSyncStatus("error"); showToast("Failed to load transactions", "#f25f4c"); return; }
+      const txns = data || [];
+      setTransactions(txns);
+      setSyncStatus("synced");
+      if (txns.length === 0) setShowMigrationBanner(true);
     })();
-  }, []);
-
-  // Save on change — debounced 8s; flush immediately on tab close
-  useEffect(() => {
-    if (isFirst.current) { isFirst.current = false; return; }
-    const newJson = JSON.stringify(transactions);
-    if (newJson === lastSavedJson.current) return;
-    lastSavedJson.current = newJson;
-    try { localStorage.setItem(LOCAL_KEY, newJson); } catch(e){}
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      setSyncStatus("saving");
-      try {
-        await saveBin(user.binId, latestTxn.current);
-        localStorage.setItem(LOCAL_KEY + "_ts", String(Date.now()));
-        setSyncStatus("synced");
-        showToast("Saved ✓");
-      } catch(e) {
-        setSyncStatus("offline");
-        showToast("Saved locally (cloud failed)", "#ff8906");
-      }
-    }, 8000);
-  }, [transactions]);
-
-  // Flush any pending cloud save when the tab closes
-  useEffect(() => {
-    const flush = () => {
-      if (saveTimer.current) {
-        clearTimeout(saveTimer.current);
-        saveBin(user.binId, latestTxn.current, true);
-      }
-    };
-    window.addEventListener("beforeunload", flush);
-    return () => window.removeEventListener("beforeunload", flush);
   }, []);
 
   // ── Monthly ──
   const filtered = transactions.filter(t => { const d=new Date(t.date); return d.getMonth()===selectedMonth&&d.getFullYear()===selectedYear; });
-  const totalIncome  = filtered.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0);
-  const totalExpense = filtered.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0);
+  const totalIncome  = filtered.filter(t=>t.type==="income").reduce((s,t)=>s+Number(t.amount),0);
+  const totalExpense = filtered.filter(t=>t.type==="expense").reduce((s,t)=>s+Number(t.amount),0);
   const balance = totalIncome-totalExpense;
-  const catTotals = CATEGORIES.expense.map(cat=>({cat,total:filtered.filter(t=>t.type==="expense"&&t.category===cat).reduce((s,t)=>s+t.amount,0)})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
+  const catTotals = CATEGORIES.expense.map(cat=>({cat,total:filtered.filter(t=>t.type==="expense"&&t.category===cat).reduce((s,t)=>s+Number(t.amount),0)})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
 
   // ── Yearly ──
   const yTx = transactions.filter(t=>new Date(t.date).getFullYear()===selectedYear);
-  const yInc = yTx.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0);
-  const yExp = yTx.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0);
+  const yInc = yTx.filter(t=>t.type==="income").reduce((s,t)=>s+Number(t.amount),0);
+  const yExp = yTx.filter(t=>t.type==="expense").reduce((s,t)=>s+Number(t.amount),0);
   const yBal = yInc-yExp;
-  const mData = MONTHS.map((m,i)=>{ const mx=yTx.filter(t=>new Date(t.date).getMonth()===i); const inc=mx.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0); const exp=mx.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0); return {month:m,income:inc,expense:exp,balance:inc-exp,count:mx.length}; });
+  const mData = MONTHS.map((m,i)=>{ const mx=yTx.filter(t=>new Date(t.date).getMonth()===i); const inc=mx.filter(t=>t.type==="income").reduce((s,t)=>s+Number(t.amount),0); const exp=mx.filter(t=>t.type==="expense").reduce((s,t)=>s+Number(t.amount),0); return {month:m,income:inc,expense:exp,balance:inc-exp,count:mx.length}; });
   const maxBar = Math.max(...mData.map(m=>Math.max(m.income,m.expense)),1);
-  const yCatTotals = CATEGORIES.expense.map(cat=>({cat,total:yTx.filter(t=>t.type==="expense"&&t.category===cat).reduce((s,t)=>s+t.amount,0)})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
   const activeMo = mData.filter(m=>m.income>0||m.expense>0);
   const bestMo  = activeMo.length ? activeMo.reduce((a,b)=>b.balance>a.balance?b:a,activeMo[0]) : null;
   const worstMo = activeMo.length ? activeMo.reduce((a,b)=>b.balance<a.balance?b:a,activeMo[0]) : null;
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!form.category||!form.amount||!form.date) return;
-    const entry = {...form,amount:parseFloat(form.amount),id:editId||Date.now()};
-    if (editId) { setTransactions(p=>p.map(t=>t.id===editId?entry:t)); setEditId(null); }
-    else { setTransactions(p=>[entry,...p]); }
+    const id = editId;
+    setSyncStatus("saving");
+    if (id) {
+      const { error } = await supabase.from("transactions")
+        .update({ type:form.type, category:form.category, amount:parseFloat(form.amount), note:form.note||"", date:form.date })
+        .eq("id", id);
+      if (error) { showToast("Failed to save","#f25f4c"); setSyncStatus("error"); return; }
+      setTransactions(p=>p.map(t=>t.id===id?{...t,type:form.type,category:form.category,amount:parseFloat(form.amount),note:form.note||"",date:form.date}:t));
+      setEditId(null);
+    } else {
+      const { data, error } = await supabase.from("transactions")
+        .insert({ user_id:session.user.id, type:form.type, category:form.category, amount:parseFloat(form.amount), note:form.note||"", date:form.date })
+        .select().single();
+      if (error) { showToast("Failed to add","#f25f4c"); setSyncStatus("error"); return; }
+      setTransactions(p=>[data,...p]);
+      setShowMigrationBanner(false);
+    }
     setForm({type:"income",category:"",amount:"",note:"",date:now.toISOString().split("T")[0]});
     setShowForm(false);
+    showToast(id?"Updated ✓":"Added ✓");
+    setSyncStatus("synced");
   }
-  function handleEdit(t) { setForm({type:t.type,category:t.category,amount:String(t.amount),note:t.note||"",date:t.date}); setEditId(t.id); setShowForm(true); setActiveTab("dashboard"); }
-  function handleDelete(id) { setTransactions(p=>p.filter(t=>t.id!==id)); }
+
+  function handleEdit(t) {
+    setForm({type:t.type,category:t.category,amount:String(t.amount),note:t.note||"",date:t.date});
+    setEditId(t.id); setShowForm(true); setActiveTab("dashboard");
+  }
+
+  async function handleDelete(id) {
+    const { error } = await supabase.from("transactions").delete().eq("id", id);
+    if (error) { showToast("Failed to delete","#f25f4c"); return; }
+    setTransactions(p=>p.filter(t=>t.id!==id));
+    showToast("Deleted ✓");
+  }
 
   function exportCSV() {
     const h="Date,Type,Category,Amount (USD),Note";
     const rows=[...transactions].sort((a,b)=>new Date(a.date)-new Date(b.date)).map(t=>`${t.date},${t.type},${t.category},${t.amount},"${(t.note||"").replace(/"/g,'""')}"`);
     const blob=new Blob([[h,...rows].join("\n")],{type:"text/csv"});
-    const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`${user.username}_finance_${selectedYear}.csv`; a.click(); URL.revokeObjectURL(url);
+    const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`finance_${selectedYear}.csv`; a.click(); URL.revokeObjectURL(url);
     showToast("CSV exported ✓");
   }
 
-  function importCSV(e) {
+  async function importCSV(e) {
     const file=e.target.files[0]; if(!file)return;
-    const r=new FileReader(); r.onload=ev=>{
+    const r=new FileReader(); r.onload=async ev=>{
       try {
         const lines=ev.target.result.split("\n").slice(1).filter(l=>l.trim());
-        const imp=lines.map(line=>{ const cols=[]; let cur="",inQ=false; for(let i=0;i<line.length;i++){if(line[i]==='"'){inQ=!inQ;continue;}if(line[i]===','&&!inQ){cols.push(cur);cur="";continue;}cur+=line[i];} cols.push(cur); const[date,type,category,amount,note]=cols.map(s=>s.trim()); return{date,type,category,amount:parseFloat(amount)||0,note:note||"",id:Date.now()+Math.random()}; }).filter(t=>t.date&&t.type&&t.category);
-        setTransactions(p=>{ const k=new Set(p.map(t=>`${t.date}|${t.type}|${t.category}|${t.amount}`)); return [...p,...imp.filter(t=>!k.has(`${t.date}|${t.type}|${t.category}|${t.amount}`))]; });
-        showToast(`Imported ${imp.length} transactions ✓`);
-      } catch(_){ showToast("Import failed","#f25f4c"); }
+        const imp=lines.map(line=>{
+          const cols=[]; let cur="",inQ=false;
+          for(let i=0;i<line.length;i++){if(line[i]==='"'){inQ=!inQ;continue;}if(line[i]===','&&!inQ){cols.push(cur);cur="";continue;}cur+=line[i];}
+          cols.push(cur);
+          const[date,type,category,amount,note]=cols.map(s=>s.trim());
+          return{date,type,category,amount:parseFloat(amount)||0,note:note||""};
+        }).filter(t=>t.date&&t.type&&t.category);
+        if(imp.length===0){showToast("No valid rows found","#f25f4c");return;}
+        const existing=new Set(transactions.map(t=>`${t.date}|${t.type}|${t.category}|${t.amount}`));
+        const newRows=imp.filter(t=>!existing.has(`${t.date}|${t.type}|${t.category}|${t.amount}`)).map(t=>({...t,user_id:session.user.id}));
+        if(newRows.length===0){showToast("All rows already imported","#ff8906");return;}
+        setSyncStatus("saving");
+        const { data, error }=await supabase.from("transactions").insert(newRows).select();
+        if(error){showToast("Import failed","#f25f4c");setSyncStatus("error");return;}
+        setTransactions(p=>[...data,...p].sort((a,b)=>new Date(b.date)-new Date(a.date)));
+        setShowMigrationBanner(false);
+        showToast(`Imported ${data.length} transactions ✓`);
+        setSyncStatus("synced");
+      } catch(_){showToast("Import failed","#f25f4c");}
     }; r.readAsText(file); e.target.value="";
   }
 
   const syncMap = {
     loading: { label:"Loading...", color:"#ff8906" },
     saving:  { label:"Saving...", color:"#ff8906" },
-    synced:  { label:`☁️ Synced · ${transactions.length} transactions`, color:"#2cb67d" },
-    offline: { label:"💾 Offline — data safe locally", color:"#a7a9be" },
+    synced:  { label:`☁ Synced · ${transactions.length} transactions`, color:"#2cb67d" },
+    error:   { label:"Error — try again", color:"#f25f4c" },
   };
   const st = syncMap[syncStatus] || syncMap.synced;
   const tabs = [{id:"dashboard",label:"Overview"},{id:"report",label:"Monthly"},{id:"yearly",label:"Yearly"},{id:"all",label:"History"}];
+  const userEmail = session.user.email;
 
   return (
     <div style={{minHeight:"100vh",background:"#0f0e17",fontFamily:"'DM Mono','Courier New',monospace",color:"#fffffe",overflowX:"hidden",width:"100%",maxWidth:"100vw",position:"relative"}}>
@@ -365,8 +497,12 @@ function Dashboard({ user, onLogout }) {
           </div>
           <div className="header-actions">
             <div style={{textAlign:"right"}}>
-              <div style={{fontSize:12,fontWeight:500,color:"#fffffe"}}>{user.displayName}</div>
-              <button onClick={onLogout} style={{fontSize:10,color:"#a7a9be",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Sign out</button>
+              <div style={{fontSize:12,fontWeight:500,color:"#fffffe",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userEmail}</div>
+              <div style={{display:"flex",gap:6,justifyContent:"flex-end",marginTop:2}}>
+                <button onClick={()=>setShowChangePw(true)} style={{fontSize:10,color:"#a7a9be",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Change pw</button>
+                <span style={{color:"#2e2d3d",fontSize:10}}>·</span>
+                <button onClick={onLogout} style={{fontSize:10,color:"#a7a9be",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Sign out</button>
+              </div>
             </div>
             <button className="btn btn-ghost" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setCurrency(c=>c==="USD"?"KHR":"USD")}>
               <span className="currency-full">{currency==="USD"?"$ USD":"៛ KHR"}</span>
@@ -401,6 +537,21 @@ function Dashboard({ user, onLogout }) {
       </div>
 
       <div className="content-wrap">
+
+        {/* Migration banner */}
+        {showMigrationBanner&&(
+          <div style={{background:"#ff890615",border:"1px solid #ff890640",borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+            <div style={{fontSize:13,color:"#fffffe",flex:1}}>Welcome! Import your existing data to get started.</div>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+              <div className="import-wrap" style={{flex:"none"}}>
+                <button className="btn btn-primary" style={{padding:"8px 16px",fontSize:12}}>Import CSV</button>
+                <input type="file" accept=".csv" onChange={importCSV}/>
+              </div>
+              <button onClick={()=>setShowMigrationBanner(false)} style={{background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:20,lineHeight:1,padding:"0 4px"}}>×</button>
+            </div>
+          </div>
+        )}
+
         {activeTab==="dashboard"&&(
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
             <div className="stats-grid">
@@ -451,7 +602,7 @@ function Dashboard({ user, onLogout }) {
             </div>
             <div className="card">
               <div style={{fontSize:12,color:"#a7a9be",marginBottom:14,textTransform:"uppercase",letterSpacing:1}}>Income Sources</div>
-              {CATEGORIES.income.map(cat=>{ const total=filtered.filter(t=>t.type==="income"&&t.category===cat).reduce((s,t)=>s+t.amount,0); if(!total)return null; return <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #1e1d2e",fontSize:13}}><span>{cat}</span><span style={{color:"#2cb67d",fontWeight:500}}>{fmt(total)}</span></div>; })}
+              {CATEGORIES.income.map(cat=>{ const total=filtered.filter(t=>t.type==="income"&&t.category===cat).reduce((s,t)=>s+Number(t.amount),0); if(!total)return null; return <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #1e1d2e",fontSize:13}}><span>{cat}</span><span style={{color:"#2cb67d",fontWeight:500}}>{fmt(total)}</span></div>; })}
               {filtered.filter(t=>t.type==="income").length===0&&<div style={{textAlign:"center",color:"#a7a9be",padding:"24px 0",fontSize:13}}>No income data</div>}
             </div>
             <div className="card" style={{borderColor:"#ff890622",background:"#ff890608"}}>
@@ -563,6 +714,7 @@ function Dashboard({ user, onLogout }) {
         )}
       </div>
 
+      {/* Add / Edit Transaction Modal */}
       {showForm&&(
         <div className="overlay" onClick={e=>e.target===e.currentTarget&&setShowForm(false)}>
           <div className="modal">
@@ -599,6 +751,15 @@ function Dashboard({ user, onLogout }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Change Password Modal */}
+      {showChangePw&&(
+        <ChangePasswordModal
+          force={forceChangePassword}
+          onDone={()=>{ setShowChangePw(false); if(forceChangePassword) onPasswordChanged(); showToast("Password updated ✓"); }}
+          onClose={()=>setShowChangePw(false)}
+        />
       )}
     </div>
   );
