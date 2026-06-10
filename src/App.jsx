@@ -120,7 +120,10 @@ function SignupScreen({ onSwitch }) {
     const { error } = await supabase.auth.signUp({
       email: mail,
       password,
-      options: { data: { username: uname } },
+      options: {
+        data: { username: uname },
+        emailRedirectTo: window.location.origin + window.location.pathname,
+      },
     });
     setLoading(false);
     if (error) {
