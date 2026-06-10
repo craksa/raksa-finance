@@ -400,6 +400,116 @@ function UserProfileModal({ session, onClose, showToast }) {
   );
 }
 
+// ── Category Manager Modal ──
+function CategoryManagerModal({ session, customCats, setCustomCats, transactions, setTransactions, showToast, onClose }) {
+  const [type, setType]           = useState("expense");
+  const [newName, setNewName]     = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName]   = useState("");
+  const [error, setError]         = useState("");
+  const [busy, setBusy]           = useState(false);
+
+  const defaults = CATEGORIES[type];
+  const customs  = customCats.filter(c => c.type === type);
+  const allNames = [...defaults, ...customs.map(c => c.name)];
+  const inUse = name => transactions.some(t => t.type === type && t.category === name);
+
+  async function handleAdd() {
+    const name = newName.trim();
+    if (!name) { setError("Enter a category name"); return; }
+    if (allNames.some(n => n.toLowerCase() === name.toLowerCase())) { setError("Category already exists"); return; }
+    setBusy(true); setError("");
+    const { data, error } = await supabase.from("categories")
+      .insert({ user_id: session.user.id, type, name })
+      .select().single();
+    setBusy(false);
+    if (error) { setError("Failed to add category"); return; }
+    setCustomCats(p => [...p, data].sort((a,b) => a.name.localeCompare(b.name)));
+    setNewName("");
+    showToast("Category added ✓");
+  }
+
+  async function handleRename(cat) {
+    const name = editName.trim();
+    if (!name) { setError("Enter a category name"); return; }
+    if (name === cat.name) { setEditingId(null); return; }
+    if (allNames.some(n => n.toLowerCase() === name.toLowerCase())) { setError("Category already exists"); return; }
+    setBusy(true); setError("");
+    const { error } = await supabase.from("categories").update({ name }).eq("id", cat.id);
+    if (error) { setBusy(false); setError("Failed to rename category"); return; }
+    // Keep existing transactions pointing at the renamed category
+    const { error: txErr } = await supabase.from("transactions")
+      .update({ category: name })
+      .eq("user_id", session.user.id).eq("type", type).eq("category", cat.name);
+    setBusy(false);
+    if (txErr) { setError("Renamed, but failed to update its transactions"); return; }
+    setCustomCats(p => p.map(c => c.id === cat.id ? { ...c, name } : c));
+    setTransactions(p => p.map(t => t.type === type && t.category === cat.name ? { ...t, category: name } : t));
+    setEditingId(null);
+    showToast("Category renamed ✓");
+  }
+
+  async function handleDelete(cat) {
+    if (inUse(cat.name)) { setError(`"${cat.name}" is used by transactions and can't be deleted`); return; }
+    setBusy(true); setError("");
+    const { error } = await supabase.from("categories").delete().eq("id", cat.id);
+    setBusy(false);
+    if (error) { setError("Failed to delete category"); return; }
+    setCustomCats(p => p.filter(c => c.id !== cat.id));
+    showToast("Category deleted ✓");
+  }
+
+  return (
+    <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal">
+        <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>Manage Categories</div>
+        <div className="type-toggle" style={{marginBottom:16}}>
+          {["income","expense"].map(t=>(
+            <button key={t} className={`type-btn ${t} ${type===t?"active":""}`} onClick={()=>{setType(t);setEditingId(null);setError("");}}>
+              {t.charAt(0).toUpperCase()+t.slice(1)}
+            </button>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          <input className="input" placeholder="New category name" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdd()}/>
+          <button className="btn btn-primary" style={{flexShrink:0}} onClick={handleAdd} disabled={busy}>+ Add</button>
+        </div>
+        {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center",marginBottom:10}}>{error}</div>}
+        <div style={{maxHeight:300,overflowY:"auto"}}>
+          {defaults.map(name=>(
+            <div key={name} className="row-item">
+              <div style={{flex:1,fontSize:13,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{name}</div>
+              <span style={{fontSize:10,color:"#a7a9be",border:"1px solid #2e2d3d",borderRadius:20,padding:"2px 8px",flexShrink:0}}>default</span>
+            </div>
+          ))}
+          {customs.map(cat=>(
+            <div key={cat.id} className="row-item">
+              {editingId===cat.id ? (
+                <>
+                  <input className="input" style={{flex:1,minWidth:0}} value={editName} onChange={e=>setEditName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleRename(cat)} autoFocus/>
+                  <button className="btn-edit btn" onClick={()=>handleRename(cat)} disabled={busy}>✓</button>
+                  <button className="btn-edit btn" onClick={()=>{setEditingId(null);setError("");}}>✕</button>
+                </>
+              ) : (
+                <>
+                  <div style={{flex:1,fontSize:13,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{cat.name}</div>
+                  {inUse(cat.name)&&<span style={{fontSize:10,color:"#ff8906",flexShrink:0}}>in use</span>}
+                  <button className="btn-edit btn" onClick={()=>{setEditingId(cat.id);setEditName(cat.name);setError("");}}>✎</button>
+                  <button className="btn-danger btn" onClick={()=>handleDelete(cat)} disabled={busy} style={{opacity:inUse(cat.name)?0.4:1}}>✕</button>
+                </>
+              )}
+            </div>
+          ))}
+          {customs.length===0&&<div style={{textAlign:"center",color:"#a7a9be",padding:"14px 0",fontSize:12}}>No custom {type} categories yet</div>}
+        </div>
+        <div style={{display:"flex",marginTop:20}}>
+          <button className="btn btn-ghost" style={{flex:1}} onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ──
 export default function App() {
   const [session, setSession] = useState(null);
@@ -457,6 +567,8 @@ function Dashboard({ session, onLogout }) {
   const [showForm, setShowForm]                 = useState(false);
   const [showChangePw, setShowChangePw]         = useState(false);
   const [showProfile, setShowProfile]           = useState(false);
+  const [showCatManager, setShowCatManager]     = useState(false);
+  const [customCats, setCustomCats]             = useState([]);
   const [activeTab, setActiveTab]               = useState("dashboard");
   const [form, setForm] = useState({ type:"income", category:"", amount:"", note:"", date:now.toISOString().split("T")[0] });
   const [editId, setEditId]                     = useState(null);
@@ -470,25 +582,32 @@ function Dashboard({ session, onLogout }) {
   useEffect(() => {
     (async () => {
       setSyncStatus("loading");
-      const { data, error } = await supabase
-        .from("transactions")
-        .select("*")
-        .eq("user_id", session.user.id)
-        .order("date", { ascending: false });
-      if (error) { setSyncStatus("error"); showToast("Failed to load transactions", "#f25f4c"); return; }
-      const txns = data || [];
+      const [txRes, catRes] = await Promise.all([
+        supabase.from("transactions").select("*").eq("user_id", session.user.id).order("date", { ascending: false }),
+        supabase.from("categories").select("*").eq("user_id", session.user.id).order("name"),
+      ]);
+      if (txRes.error) { setSyncStatus("error"); showToast("Failed to load transactions", "#f25f4c"); return; }
+      // Categories table may not exist yet — fall back to defaults only
+      if (!catRes.error) setCustomCats(catRes.data || []);
+      const txns = txRes.data || [];
       setTransactions(txns);
       setSyncStatus("synced");
       if (txns.length === 0) setShowMigrationBanner(true);
     })();
   }, []);
 
+  // Defaults (shared by everyone) + this user's custom categories
+  const cats = {
+    income:  [...CATEGORIES.income,  ...customCats.filter(c=>c.type==="income").map(c=>c.name)],
+    expense: [...CATEGORIES.expense, ...customCats.filter(c=>c.type==="expense").map(c=>c.name)],
+  };
+
   // ── Monthly ──
   const filtered = transactions.filter(t => { const d=new Date(t.date); return d.getMonth()===selectedMonth&&d.getFullYear()===selectedYear; });
   const totalIncome  = filtered.filter(t=>t.type==="income").reduce((s,t)=>s+Number(t.amount),0);
   const totalExpense = filtered.filter(t=>t.type==="expense").reduce((s,t)=>s+Number(t.amount),0);
   const balance = totalIncome-totalExpense;
-  const catTotals = CATEGORIES.expense.map(cat=>({cat,total:filtered.filter(t=>t.type==="expense"&&t.category===cat).reduce((s,t)=>s+Number(t.amount),0)})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
+  const catTotals = cats.expense.map(cat=>({cat,total:filtered.filter(t=>t.type==="expense"&&t.category===cat).reduce((s,t)=>s+Number(t.amount),0)})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
 
   // ── Yearly ──
   const yTx = transactions.filter(t=>new Date(t.date).getFullYear()===selectedYear);
@@ -700,6 +819,7 @@ function Dashboard({ session, onLogout }) {
             <button className="btn btn-ghost" style={{width:"100%",fontSize:11,padding:"7px 10px"}}>↑ Import CSV</button>
             <input type="file" accept=".csv" onChange={importCSV}/>
           </div>
+          <button className="btn btn-ghost" style={{flex:1,fontSize:11,padding:"7px 10px"}} onClick={()=>setShowCatManager(true)}>⚙ Categories</button>
         </div>
       </div>
 
@@ -783,7 +903,7 @@ function Dashboard({ session, onLogout }) {
             </div>
             <div className="card">
               <div style={{fontSize:12,color:"#a7a9be",marginBottom:14,textTransform:"uppercase",letterSpacing:1}}>Income Sources</div>
-              {CATEGORIES.income.map(cat=>{ const total=filtered.filter(t=>t.type==="income"&&t.category===cat).reduce((s,t)=>s+Number(t.amount),0); if(!total)return null; return <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #1e1d2e",fontSize:13}}><span>{cat}</span><span style={{color:"#2cb67d",fontWeight:500}}>{fmt(total)}</span></div>; })}
+              {cats.income.map(cat=>{ const total=filtered.filter(t=>t.type==="income"&&t.category===cat).reduce((s,t)=>s+Number(t.amount),0); if(!total)return null; return <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #1e1d2e",fontSize:13}}><span>{cat}</span><span style={{color:"#2cb67d",fontWeight:500}}>{fmt(total)}</span></div>; })}
               {filtered.filter(t=>t.type==="income").length===0&&<div style={{textAlign:"center",color:"#a7a9be",padding:"24px 0",fontSize:13}}>No income data</div>}
             </div>
             <div className="card" style={{borderColor:"#ff890622",background:"#ff890608"}}>
@@ -910,7 +1030,7 @@ function Dashboard({ session, onLogout }) {
                 <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Category</label>
                 <select className="input" value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
                   <option value="">Select category</option>
-                  {CATEGORIES[form.type].map(c=><option key={c} value={c}>{c}</option>)}
+                  {cats[form.type].map(c=><option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -939,6 +1059,19 @@ function Dashboard({ session, onLogout }) {
         <ChangePasswordModal
           onDone={()=>{ setShowChangePw(false); showToast("Password updated ✓"); }}
           onClose={()=>setShowChangePw(false)}
+        />
+      )}
+
+      {/* Category Manager Modal */}
+      {showCatManager&&(
+        <CategoryManagerModal
+          session={session}
+          customCats={customCats}
+          setCustomCats={setCustomCats}
+          transactions={transactions}
+          setTransactions={setTransactions}
+          showToast={showToast}
+          onClose={()=>setShowCatManager(false)}
         />
       )}
 
