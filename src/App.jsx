@@ -21,6 +21,11 @@ const USERS = {
     binId: "6a284518da38895dfea18d22",
     displayName: "Sreydy",
   },
+  dara: {
+    password: "Cambodia!12",
+    binId: "6a28e111da38895dfea44c6b",
+    displayName: "Dara",
+  },
 };
 const API_KEY = "$2a$10$tTp7PjjPVO1QFDTjVhHCruEJCsak1ermn74S9RSJEjfESYTUOk9hy";
 
