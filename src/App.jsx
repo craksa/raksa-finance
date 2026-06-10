@@ -292,8 +292,9 @@ function Dashboard({ user, onLogout }) {
         .bar-fill{border-radius:4px;transition:width .5s}
         .tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px}
         .tag-income{background:#2cb67d22;color:#2cb67d}.tag-expense{background:#f25f4c22;color:#f25f4c}
-        .overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
-        .modal{background:#1a1929;border:1px solid #2e2d3d;border-radius:16px;padding:28px;width:calc(100% - 32px);max-width:440px;max-height:90vh;overflow-y:auto;box-sizing:border-box}
+        .overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
+        .modal{background:#1a1929;border:1px solid #2e2d3d;border-radius:16px;padding:28px;width:calc(100vw - 32px);max-width:440px;max-height:90vh;overflow-y:auto;overflow-x:hidden;box-sizing:border-box}
+        .modal *{box-sizing:border-box;max-width:100%}
         .type-toggle{display:flex;background:#12111f;border-radius:8px;padding:4px;gap:4px}
         .type-btn{flex:1;padding:8px;border-radius:6px;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;transition:all .15s;min-width:0;box-sizing:border-box}
         .type-btn.income.active{background:#2cb67d;color:#fff}.type-btn.expense.active{background:#f25f4c;color:#fff}
@@ -584,7 +585,7 @@ function Dashboard({ user, onLogout }) {
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Date</label>
-                <input className="input" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={{textAlign:"left",paddingLeft:14}}/>
+                <input className="input" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={{textAlign:"left",paddingLeft:14,width:"100%",maxWidth:"100%",boxSizing:"border-box",overflow:"hidden"}}/>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Note <span style={{opacity:0.5}}>(optional)</span></label>
