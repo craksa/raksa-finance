@@ -29,11 +29,12 @@ function getDisplayName(session) {
 }
 
 // Resolve login input (username or email) to an email address
-function resolveEmail(input) {
+async function resolveEmail(input) {
   const v = input.trim().toLowerCase();
   if (v.includes("@")) return v;
   if (USERNAME_MAP[v]) return USERNAME_MAP[v].email;
-  return null;
+  const { data } = await supabase.rpc("get_email_for_username", { uname: v });
+  return data || null;
 }
 
 // ── Shared auth shell ──
@@ -65,9 +66,9 @@ function LoginScreen({ onSwitch }) {
 
   async function handleLogin() {
     if (!login || !password) { setError("Please fill in all fields"); return; }
-    const email = resolveEmail(login);
-    if (!email) { setError("User not found. New users must sign in with their email."); return; }
     setLoading(true); setError("");
+    const email = await resolveEmail(login);
+    if (!email) { setLoading(false); setError("Username not found — try your email address"); return; }
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) setError(error.message);
@@ -117,6 +118,8 @@ function SignupScreen({ onSwitch }) {
     if (password !== confirm)          { setError("Passwords do not match"); return; }
     if (password.length < 6)           { setError("Password must be at least 6 characters"); return; }
     setLoading(true); setError("");
+    const { data: taken } = await supabase.rpc("get_email_for_username", { uname });
+    if (taken) { setLoading(false); setError("Username already taken"); return; }
     const { error } = await supabase.auth.signUp({
       email: mail,
       password,
@@ -184,9 +187,9 @@ function ForgotPasswordScreen({ onSwitch }) {
 
   async function handleReset() {
     if (!login) { setError("Please enter your username or email"); return; }
-    const email = resolveEmail(login);
-    if (!email) { setError("User not found"); return; }
     setLoading(true); setError("");
+    const email = await resolveEmail(login);
+    if (!email) { setLoading(false); setError("Username not found — try your email address"); return; }
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin + window.location.pathname,
     });
