@@ -342,13 +342,13 @@ function Dashboard({ user, onLogout }) {
           .stat-value{font-size:13px!important}
           .stat-label{font-size:9px!important}
           .row-tag{display:none!important}
-          .row-edit-btn{display:none!important}
           .row-amount{min-width:0!important;flex-shrink:0;font-size:12px!important}
           .row-item{gap:6px;padding:10px 0}
           .currency-full{display:none}
           .currency-short{display:inline}
           .btn-add{padding:6px 10px!important;font-size:12px!important}
           .btn-danger{width:28px!important;height:28px!important;padding:0!important;display:flex!important;align-items:center;justify-content:center;flex-shrink:0}
+          .btn-edit{width:28px!important;height:28px!important;padding:0!important;display:flex!important;align-items:center;justify-content:center;flex-shrink:0}
         }
       `}</style>
 
@@ -425,12 +425,13 @@ function Dashboard({ user, onLogout }) {
                 :filtered.slice(0,8).map(t=>(
                   <div key={t.id} className="row-item">
                     <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:10,color:"#a7a9be",marginBottom:2}}>{t.date.slice(8,10)} {MONTHS[parseInt(t.date.slice(5,7))-1]}</div>
                       <div style={{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.category}</div>
-                      <div style={{fontSize:11,color:"#a7a9be"}}>{t.note||t.date}</div>
+                      {t.note&&<div style={{fontSize:11,color:"#a7a9be"}}>{t.note}</div>}
                     </div>
                     <span className={`tag tag-${t.type} row-tag`}>{t.type}</span>
                     <div className="row-amount" style={{fontWeight:500,color:t.type==="income"?"#2cb67d":"#f25f4c",fontSize:12,minWidth:70,textAlign:"right"}}>{t.type==="income"?"+":"-"}{fmt(t.amount)}</div>
-                    <button className="btn-edit btn row-edit-btn" onClick={()=>handleEdit(t)}>✎</button>
+                    <button className="btn-edit btn" onClick={()=>handleEdit(t)}>✎</button>
                     <button className="btn-danger btn" onClick={()=>handleDelete(t.id)}>✕</button>
                   </div>
                 ))}
@@ -547,14 +548,14 @@ function Dashboard({ user, onLogout }) {
             {filtered.length===0?<div style={{textAlign:"center",color:"#a7a9be",padding:"24px 0",fontSize:13}}>No transactions this month</div>
               :[...filtered].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=>(
                 <div key={t.id} className="row-item">
-                  <div style={{minWidth:40,fontSize:11,color:"#a7a9be"}}>{t.date.slice(5)}</div>
                   <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:10,color:"#a7a9be",marginBottom:2}}>{t.date.slice(8,10)} {MONTHS[parseInt(t.date.slice(5,7))-1]}</div>
                     <div style={{fontSize:13,fontWeight:500}}>{t.category}</div>
                     {t.note&&<div style={{fontSize:11,color:"#a7a9be"}}>{t.note}</div>}
                   </div>
                   <span className={`tag tag-${t.type} row-tag`}>{t.type}</span>
                   <div className="row-amount" style={{fontWeight:500,color:t.type==="income"?"#2cb67d":"#f25f4c",fontSize:12,minWidth:70,textAlign:"right"}}>{t.type==="income"?"+":"-"}{fmt(t.amount)}</div>
-                  <button className="btn-edit btn row-edit-btn" onClick={()=>handleEdit(t)}>✎</button>
+                  <button className="btn-edit btn" onClick={()=>handleEdit(t)}>✎</button>
                   <button className="btn-danger btn" onClick={()=>handleDelete(t.id)}>✕</button>
                 </div>
               ))}
