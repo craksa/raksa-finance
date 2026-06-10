@@ -572,6 +572,7 @@ function Dashboard({ session, onLogout }) {
   const [activeTab, setActiveTab]               = useState("dashboard");
   const [form, setForm] = useState({ type:"income", category:"", amount:"", note:"", date:now.toISOString().split("T")[0] });
   const [editId, setEditId]                     = useState(null);
+  const [page, setPage]                         = useState(1);
   const [syncStatus, setSyncStatus]             = useState("loading");
   const [toast, setToast]                       = useState(null);
   const [showMigrationBanner, setShowMigrationBanner] = useState(false);
@@ -607,6 +608,8 @@ function Dashboard({ session, onLogout }) {
     })();
   }, []);
 
+  useEffect(() => { setPage(1); }, [selectedMonth, selectedYear]);
+
   // This user's categories (defaults are seeded per-user on first load).
   // Falls back to the built-in list until the fetch/seed completes.
   const cats = customCats.length ? {
@@ -619,6 +622,9 @@ function Dashboard({ session, onLogout }) {
   const totalIncome  = filtered.filter(t=>t.type==="income").reduce((s,t)=>s+Number(t.amount),0);
   const totalExpense = filtered.filter(t=>t.type==="expense").reduce((s,t)=>s+Number(t.amount),0);
   const balance = totalIncome-totalExpense;
+  const TX_PER_PAGE = 10;
+  const totalTxPages = Math.max(1, Math.ceil(filtered.length / TX_PER_PAGE));
+  const txPage = Math.min(page, totalTxPages);
   const catTotals = cats.expense.map(cat=>({cat,total:filtered.filter(t=>t.type==="expense"&&t.category===cat).reduce((s,t)=>s+Number(t.amount),0)})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
 
   // ── Yearly ──
@@ -884,21 +890,34 @@ function Dashboard({ session, onLogout }) {
               </div>
             </div>}
             <div className="card">
-              <div style={{fontSize:12,color:"#a7a9be",marginBottom:14,textTransform:"uppercase",letterSpacing:1}}>Recent</div>
+              <div style={{fontSize:12,color:"#a7a9be",marginBottom:14,textTransform:"uppercase",letterSpacing:1}}>
+                Recent{filtered.length>TX_PER_PAGE&&<span style={{textTransform:"none",letterSpacing:0}}> · page {txPage} of {totalTxPages}</span>}
+              </div>
               {filtered.length===0?<div style={{textAlign:"center",color:"#a7a9be",padding:"24px 0",fontSize:13}}>No transactions this month</div>
-                :filtered.slice(0,8).map(t=>(
-                  <div key={t.id} className="row-item">
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:10,color:"#a7a9be",marginBottom:2}}>{t.date.slice(8,10)} {MONTHS[parseInt(t.date.slice(5,7))-1]}</div>
-                      <div style={{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.category}</div>
-                      {t.note&&<div style={{fontSize:11,color:"#a7a9be"}}>{t.note}</div>}
+                :<>
+                  {filtered.slice((txPage-1)*TX_PER_PAGE, txPage*TX_PER_PAGE).map(t=>(
+                    <div key={t.id} className="row-item">
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:10,color:"#a7a9be",marginBottom:2}}>{t.date.slice(8,10)} {MONTHS[parseInt(t.date.slice(5,7))-1]}</div>
+                        <div style={{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.category}</div>
+                        {t.note&&<div style={{fontSize:11,color:"#a7a9be"}}>{t.note}</div>}
+                      </div>
+                      <span className={`tag tag-${t.type} row-tag`}>{t.type}</span>
+                      <div className="row-amount" style={{fontWeight:500,color:t.type==="income"?"#2cb67d":"#f25f4c",fontSize:12,minWidth:70,textAlign:"right"}}>{t.type==="income"?"+":"-"}{fmt(t.amount)}</div>
+                      <button className="btn-edit btn" onClick={()=>handleEdit(t)}>✎</button>
+                      <button className="btn-danger btn" onClick={()=>handleDelete(t.id)}>✕</button>
                     </div>
-                    <span className={`tag tag-${t.type} row-tag`}>{t.type}</span>
-                    <div className="row-amount" style={{fontWeight:500,color:t.type==="income"?"#2cb67d":"#f25f4c",fontSize:12,minWidth:70,textAlign:"right"}}>{t.type==="income"?"+":"-"}{fmt(t.amount)}</div>
-                    <button className="btn-edit btn" onClick={()=>handleEdit(t)}>✎</button>
-                    <button className="btn-danger btn" onClick={()=>handleDelete(t.id)}>✕</button>
-                  </div>
-                ))}
+                  ))}
+                  {totalTxPages>1&&(
+                    <div style={{display:"flex",gap:6,justifyContent:"center",alignItems:"center",marginTop:14,flexWrap:"wrap"}}>
+                      <button className="nav-btn" onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={txPage===1} style={{opacity:txPage===1?0.4:1}}>‹</button>
+                      {Array.from({length:totalTxPages},(_,i)=>i+1).map(n=>(
+                        <button key={n} className={`tab ${txPage===n?"active":""}`} style={{padding:"6px 12px"}} onClick={()=>setPage(n)}>{n}</button>
+                      ))}
+                      <button className="nav-btn" onClick={()=>setPage(p=>Math.min(totalTxPages,p+1))} disabled={txPage===totalTxPages} style={{opacity:txPage===totalTxPages?0.4:1}}>›</button>
+                    </div>
+                  )}
+                </>}
             </div>
           </div>
         )}
