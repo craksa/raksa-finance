@@ -222,18 +222,18 @@ function ForgotPasswordScreen({ onSwitch }) {
   );
 }
 
-// ── Change Password Modal ──
-function ChangePasswordModal({ force, onDone, onClose }) {
+// ── Reset Password Form (used on full-screen recovery page) ──
+function ResetPasswordForm({ onDone }) {
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [showPw, setShowPw] = useState(false);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [confirm, setConfirm]   = useState("");
+  const [showPw, setShowPw]     = useState(false);
+  const [error, setError]       = useState("");
+  const [loading, setLoading]   = useState(false);
 
   async function handleChange() {
-    if (!password) { setError("Please enter a new password"); return; }
-    if (password !== confirm) { setError("Passwords do not match"); return; }
-    if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    if (!password)               { setError("Please enter a new password"); return; }
+    if (password.length < 6)     { setError("Password must be at least 6 characters"); return; }
+    if (password !== confirm)    { setError("Passwords do not match"); return; }
     setLoading(true); setError("");
     const { error } = await supabase.auth.updateUser({ password });
     setLoading(false);
@@ -242,11 +242,47 @@ function ChangePasswordModal({ force, onDone, onClose }) {
   }
 
   return (
-    <div className="overlay" onClick={e=>e.target===e.currentTarget&&!force&&onClose()}>
+    <>
+      <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,marginBottom:8,color:"#fffffe"}}>Set New Password</div>
+      <div style={{fontSize:12,color:"#ff8906",marginBottom:20}}>Choose a new password for your account.</div>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{position:"relative"}}>
+          <input style={{...authInp,padding:"10px 40px 10px 14px"}} type={showPw?"text":"password"} placeholder="New password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="new-password"/>
+          <button onClick={()=>setShowPw(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:13}}>{showPw?"Hide":"Show"}</button>
+        </div>
+        <input style={authInp} type="password" placeholder="Confirm new password" value={confirm} onChange={e=>setConfirm(e.target.value)} autoComplete="new-password"/>
+        {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
+        <button onClick={handleChange} disabled={loading} style={{background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:6,padding:"12px",fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4,opacity:loading?0.7:1}}>
+          {loading?"Saving...":"Update Password"}
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ── Change Password Modal (used inside Profile modal) ──
+function ChangePasswordModal({ onDone, onClose }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm]   = useState("");
+  const [showPw, setShowPw]     = useState(false);
+  const [error, setError]       = useState("");
+  const [loading, setLoading]   = useState(false);
+
+  async function handleChange() {
+    if (!password)            { setError("Please enter a new password"); return; }
+    if (password !== confirm) { setError("Passwords do not match"); return; }
+    if (password.length < 6)  { setError("Password must be at least 6 characters"); return; }
+    setLoading(true); setError("");
+    const { error } = await supabase.auth.updateUser({ password });
+    setLoading(false);
+    if (error) { setError(error.message); return; }
+    onDone();
+  }
+
+  return (
+    <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal">
-        <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,marginBottom:8}}>Change Password</div>
-        {force&&<div style={{fontSize:12,color:"#ff8906",marginBottom:20}}>Please set a new password to continue.</div>}
-        {!force&&<div style={{marginBottom:20}}/>}
+        <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>Change Password</div>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{position:"relative"}}>
             <input style={{background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 40px 10px 14px",width:"100%",outline:"none",boxSizing:"border-box"}} type={showPw?"text":"password"} placeholder="New password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="new-password"/>
@@ -256,8 +292,8 @@ function ChangePasswordModal({ force, onDone, onClose }) {
           {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
         </div>
         <div style={{display:"flex",gap:10,marginTop:20}}>
-          {!force&&<button className="btn btn-ghost" style={{flex:1,minWidth:0}} onClick={onClose}>Cancel</button>}
-          <button className="btn btn-primary" style={{flex:force?1:2,minWidth:0}} onClick={handleChange} disabled={loading}>{loading?"Saving...":"Update Password"}</button>
+          <button className="btn btn-ghost" style={{flex:1,minWidth:0}} onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" style={{flex:2,minWidth:0}} onClick={handleChange} disabled={loading}>{loading?"Saving...":"Update Password"}</button>
         </div>
       </div>
     </div>
@@ -396,18 +432,24 @@ export default function App() {
   if (authView === "forgot") return <ForgotPasswordScreen onSwitch={setAuthView}/>;
   if (!session) return <LoginScreen onSwitch={setAuthView}/>;
 
+  if (authView === "recovery") return (
+    <AuthShell subtitle="Set your new password">
+      <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
+        <ResetPasswordForm onDone={() => setAuthView(null)} />
+      </div>
+    </AuthShell>
+  );
+
   return (
     <Dashboard
       session={session}
       onLogout={() => supabase.auth.signOut()}
-      forceChangePassword={authView === "recovery"}
-      onPasswordChanged={() => setAuthView(null)}
     />
   );
 }
 
 // ── Dashboard ──
-function Dashboard({ session, onLogout, forceChangePassword, onPasswordChanged }) {
+function Dashboard({ session, onLogout }) {
   const [transactions, setTransactions]         = useState([]);
   const [selectedMonth, setSelectedMonth]       = useState(now.getMonth());
   const [selectedYear, setSelectedYear]         = useState(now.getFullYear());
@@ -421,8 +463,6 @@ function Dashboard({ session, onLogout, forceChangePassword, onPasswordChanged }
   const [syncStatus, setSyncStatus]             = useState("loading");
   const [toast, setToast]                       = useState(null);
   const [showMigrationBanner, setShowMigrationBanner] = useState(false);
-
-  useEffect(() => { if (forceChangePassword) setShowChangePw(true); }, [forceChangePassword]);
 
   const fmt = n => currency === "USD" ? fmtUSD(n) : fmtKHR(n);
   const showToast = (msg, color="#2cb67d") => { setToast({msg,color}); setTimeout(()=>setToast(null),3000); };
@@ -894,11 +934,10 @@ function Dashboard({ session, onLogout, forceChangePassword, onPasswordChanged }
         </div>
       )}
 
-      {/* Change Password Modal (password-recovery flow) */}
+      {/* Change Password Modal */}
       {showChangePw&&(
         <ChangePasswordModal
-          force={forceChangePassword}
-          onDone={()=>{ setShowChangePw(false); if(forceChangePassword) onPasswordChanged(); showToast("Password updated ✓"); }}
+          onDone={()=>{ setShowChangePw(false); showToast("Password updated ✓"); }}
           onClose={()=>setShowChangePw(false)}
         />
       )}
