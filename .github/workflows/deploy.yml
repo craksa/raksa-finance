@@ -1,28 +1,23 @@
-name: Deploy to GitHub Pages
+name: Build check
 
 on:
   push:
     branches:
       - main
 
-permissions:
-  contents: write
-
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
-      # 1. Upgraded from @v3 to @v4
-      - name: Checkout 🛎️
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. Upgraded from @v3 to @v4
-      - name: Setup Node ⚙️
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20' # You can keep your project running on Node 20; this just updates the runner environment
+          node-version: '20'
 
-      - name: Install and Build 🔧
+      - name: Install and Build
         run: |
           npm install
           npm run build
@@ -30,10 +25,3 @@ jobs:
           CI: false
           REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
           REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
-
-      # 3. Upgraded from @v3 to @v4
-      - name: Deploy 🚀
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build
