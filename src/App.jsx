@@ -313,6 +313,13 @@ function Dashboard({ user, onLogout }) {
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
         .header-title{font-family:'Syne',sans-serif;font-size:clamp(16px,4.5vw,20px);font-weight:800;color:#ff8906}
         .header-actions{display:flex;gap:8px;align-items:center}
+        .header-wrap{background:#12111f;border-bottom:1px solid #2e2d3d;padding:14px 20px}
+        .nav-wrap{padding:14px 20px;display:flex;flex-direction:column;gap:12px}
+        .content-wrap{padding:0 20px 100px}
+        .stats-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+        .stats-card{text-align:center;padding:14px}
+        .stat-label{font-size:10px;color:#a7a9be;margin-bottom:6px}
+        .currency-short{display:none}
         @media(max-width:600px){
           .header-actions{width:100%;justify-content:flex-end}
           .btn-danger{padding:9px 12px;font-size:12px}
@@ -322,12 +329,27 @@ function Dashboard({ user, onLogout }) {
           .modal{border-radius:20px 20px 0 0;max-height:92vh;max-width:100%;width:100%}
           .input{min-height:44px}
         }
+        @media(max-width:480px){
+          .header-wrap{padding:8px 12px}
+          .nav-wrap{padding:8px 12px;gap:8px}
+          .content-wrap{padding:0 12px 100px}
+          .stats-grid{gap:6px}
+          .stats-card{padding:8px 4px}
+          .stat-value{font-size:11px!important}
+          .stat-label{font-size:9px!important}
+          .row-tag{display:none}
+          .row-edit-btn{display:none}
+          .row-item{gap:6px;padding:10px 0}
+          .currency-full{display:none}
+          .currency-short{display:inline}
+          .btn-add{padding:6px 10px!important;font-size:12px!important}
+        }
       `}</style>
 
       {toast&&<div className="toast" style={{background:toast.color,color:"#fff"}}>{toast.msg}</div>}
 
       {/* Header */}
-      <div style={{background:"#12111f",borderBottom:"1px solid #2e2d3d",padding:"14px 20px"}}>
+      <div className="header-wrap">
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
           <div>
             <div className="header-title">Incomes and Expenses</div>
@@ -341,9 +363,10 @@ function Dashboard({ user, onLogout }) {
               <button onClick={onLogout} style={{fontSize:10,color:"#a7a9be",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Sign out</button>
             </div>
             <button className="btn btn-ghost" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setCurrency(c=>c==="USD"?"KHR":"USD")}>
-              {currency==="USD"?"$ USD":"៛ KHR"}
+              <span className="currency-full">{currency==="USD"?"$ USD":"៛ KHR"}</span>
+              <span className="currency-short">{currency==="USD"?"$":"K"}</span>
             </button>
-            <button className="btn btn-primary" onClick={()=>{setEditId(null);setForm({type:"income",category:"",amount:"",note:"",date:now.toISOString().split("T")[0]});setShowForm(true);}}>
+            <button className="btn btn-primary btn-add" onClick={()=>{setEditId(null);setForm({type:"income",category:"",amount:"",note:"",date:now.toISOString().split("T")[0]});setShowForm(true);}}>
               + Add
             </button>
           </div>
@@ -358,7 +381,7 @@ function Dashboard({ user, onLogout }) {
       </div>
 
       {/* Nav */}
-      <div style={{padding:"14px 20px",display:"flex",flexDirection:"column",gap:12}}>
+      <div className="nav-wrap">
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <button className="nav-btn" onClick={()=>{ if(activeTab==="yearly"){setSelectedYear(y=>y-1);return;} if(selectedMonth===0){setSelectedMonth(11);setSelectedYear(y=>y-1);}else setSelectedMonth(m=>m-1); }}>‹</button>
           <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:15,flex:1,textAlign:"center"}}>
@@ -371,13 +394,13 @@ function Dashboard({ user, onLogout }) {
         </div>
       </div>
 
-      <div style={{padding:"0 20px 100px"}}>
+      <div className="content-wrap">
         {activeTab==="dashboard"&&(
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+            <div className="stats-grid">
               {[{label:"Income",value:totalIncome,color:"#2cb67d"},{label:"Expenses",value:totalExpense,color:"#f25f4c"},{label:"Balance",value:balance,color:balance>=0?"#ff8906":"#f25f4c"}].map(s=>(
-                <div key={s.label} className="card" style={{textAlign:"center",padding:14}}>
-                  <div style={{fontSize:10,color:"#a7a9be",marginBottom:6}}>{s.label}</div>
+                <div key={s.label} className="card stats-card">
+                  <div className="stat-label">{s.label}</div>
                   <div className="stat-value" style={{color:s.color,fontSize:14}}>{fmt(s.value)}</div>
                 </div>
               ))}
@@ -399,9 +422,9 @@ function Dashboard({ user, onLogout }) {
                       <div style={{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.category}</div>
                       <div style={{fontSize:11,color:"#a7a9be"}}>{t.note||t.date}</div>
                     </div>
-                    <span className={`tag tag-${t.type}`}>{t.type}</span>
+                    <span className={`tag tag-${t.type} row-tag`}>{t.type}</span>
                     <div style={{fontWeight:500,color:t.type==="income"?"#2cb67d":"#f25f4c",fontSize:12,minWidth:70,textAlign:"right"}}>{t.type==="income"?"+":"-"}{fmt(t.amount)}</div>
-                    <button className="btn-edit btn" onClick={()=>handleEdit(t)}>✎</button>
+                    <button className="btn-edit btn row-edit-btn" onClick={()=>handleEdit(t)}>✎</button>
                     <button className="btn-danger btn" onClick={()=>handleDelete(t.id)}>✕</button>
                   </div>
                 ))}
