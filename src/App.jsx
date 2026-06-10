@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 
 // Seeded into each user's account on first load; after that the DB is the source of truth
@@ -40,10 +40,10 @@ function resolveEmail(input) {
 function AuthShell({ children, subtitle }) {
   return (
     <div style={{minHeight:"100vh",background:"#0f0e17",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'DM Mono','Courier New',monospace"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap');*{box-sizing:border-box;margin:0;padding:0}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap');*{box-sizing:border-box;margin:0;padding:0}`}</style>
       <div style={{width:"100%",maxWidth:360}}>
         <div style={{textAlign:"center",marginBottom:40}}>
-          <div style={{fontFamily:"'Syne',sans-serif",fontSize:36,fontWeight:800,color:"#ff8906",letterSpacing:-1}}>Incomes and Expenses</div>
+          <div style={{fontFamily:"Tahoma,sans-serif",fontSize:36,fontWeight:800,color:"#ff8906",letterSpacing:-1}}>Incomes and Expenses</div>
           <div style={{fontSize:12,color:"#a7a9be",marginTop:6}}>{subtitle||"Finance Tracker · Phnom Penh"}</div>
         </div>
         {children}
@@ -244,7 +244,7 @@ function ResetPasswordForm({ onDone }) {
 
   return (
     <>
-      <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,marginBottom:8,color:"#fffffe"}}>Set New Password</div>
+      <div style={{fontFamily:"Tahoma,sans-serif",fontSize:18,fontWeight:800,marginBottom:8,color:"#fffffe"}}>Set New Password</div>
       <div style={{fontSize:12,color:"#ff8906",marginBottom:20}}>Choose a new password for your account.</div>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{position:"relative"}}>
@@ -283,7 +283,7 @@ function ChangePasswordModal({ onDone, onClose }) {
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal">
-        <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>Change Password</div>
+        <div style={{fontFamily:"Tahoma,sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>Change Password</div>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{position:"relative"}}>
             <input style={{background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 40px 10px 14px",width:"100%",outline:"none",boxSizing:"border-box"}} type={showPw?"text":"password"} placeholder="New password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="new-password"/>
@@ -353,7 +353,7 @@ function UserProfileModal({ session, onClose, showToast }) {
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal">
-        <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>Account Settings</div>
+        <div style={{fontFamily:"Tahoma,sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>Account Settings</div>
 
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           {/* Display name */}
@@ -462,7 +462,7 @@ function CategoryManagerModal({ session, customCats, setCustomCats, transactions
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal">
-        <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>Manage Categories</div>
+        <div style={{fontFamily:"Tahoma,sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>Manage Categories</div>
         <div className="type-toggle" style={{marginBottom:16}}>
           {["income","expense"].map(t=>(
             <button key={t} className={`type-btn ${t} ${type===t?"active":""}`} onClick={()=>{setType(t);setEditingId(null);setError("");}}>
@@ -711,7 +711,7 @@ function Dashboard({ session, onLogout }) {
   return (
     <div style={{minHeight:"100vh",background:"#0f0e17",fontFamily:"'DM Mono','Courier New',monospace",color:"#fffffe",overflowX:"hidden",width:"100%",maxWidth:"100vw",position:"relative"}}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
         ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#0f0e17}::-webkit-scrollbar-thumb{background:#ff8906;border-radius:2px}
         .btn{cursor:pointer;border:none;border-radius:6px;font-family:inherit;font-size:13px;font-weight:500;padding:10px 18px;transition:all .15s}
@@ -753,7 +753,7 @@ function Dashboard({ session, onLogout }) {
         .import-wrap input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
         .pulse{animation:pulse 1.2s ease infinite}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-        .header-title{font-family:'Syne',sans-serif;font-size:clamp(16px,4.5vw,20px);font-weight:800;color:#ff8906}
+        .header-title{font-family:Tahoma,sans-serif;font-size:clamp(16px,4.5vw,20px);font-weight:800;color:#ff8906}
         .header-actions{display:flex;gap:8px;align-items:center}
         .header-wrap{background:#12111f;border-bottom:1px solid #2e2d3d;padding:14px 20px}
         .nav-wrap{padding:14px 20px;display:flex;flex-direction:column;gap:12px}
@@ -833,7 +833,7 @@ function Dashboard({ session, onLogout }) {
       <div className="nav-wrap">
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <button className="nav-btn" onClick={()=>{ if(activeTab==="yearly"){setSelectedYear(y=>y-1);return;} if(selectedMonth===0){setSelectedMonth(11);setSelectedYear(y=>y-1);}else setSelectedMonth(m=>m-1); }}>‹</button>
-          <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:15,flex:1,textAlign:"center"}}>
+          <span style={{fontFamily:"Tahoma,sans-serif",fontWeight:700,fontSize:15,flex:1,textAlign:"center"}}>
             {activeTab==="yearly"?`Annual Report ${selectedYear}`:`${MONTHS_FULL[selectedMonth]} ${selectedYear}`}
           </span>
           <button className="nav-btn" onClick={()=>{ if(activeTab==="yearly"){setSelectedYear(y=>y+1);return;} if(selectedMonth===11){setSelectedMonth(0);setSelectedYear(y=>y+1);}else setSelectedMonth(m=>m+1); }}>›</button>
@@ -1025,7 +1025,7 @@ function Dashboard({ session, onLogout }) {
       {showForm&&(
         <div className="overlay" onClick={e=>e.target===e.currentTarget&&setShowForm(false)}>
           <div className="modal">
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>{editId?"Edit Transaction":"New Transaction"}</div>
+            <div style={{fontFamily:"Tahoma,sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>{editId?"Edit Transaction":"New Transaction"}</div>
             <div className="type-toggle" style={{marginBottom:16}}>
               {["income","expense"].map(type=>(<button key={type} className={`type-btn ${type} ${form.type===type?"active":""}`} onClick={()=>setForm(f=>({...f,type,category:""}))}>
                 {type.charAt(0).toUpperCase()+type.slice(1)}
