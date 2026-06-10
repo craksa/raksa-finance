@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 
+// Seeded into each user's account on first load; after that the DB is the source of truth
 const CATEGORIES = {
   income: ["Salary", "Freelance", "Bonus", "Investment", "Other Income"],
   expense: ["Food & Dining", "Transport", "Utilities", "Shopping", "Health", "Entertainment", "Rent", "Savings", "Investment", "Other"],
@@ -409,9 +410,8 @@ function CategoryManagerModal({ session, customCats, setCustomCats, transactions
   const [error, setError]         = useState("");
   const [busy, setBusy]           = useState(false);
 
-  const defaults = CATEGORIES[type];
   const customs  = customCats.filter(c => c.type === type);
-  const allNames = [...defaults, ...customs.map(c => c.name)];
+  const allNames = customs.map(c => c.name);
   const inUse = name => transactions.some(t => t.type === type && t.category === name);
 
   async function handleAdd() {
@@ -476,12 +476,6 @@ function CategoryManagerModal({ session, customCats, setCustomCats, transactions
         </div>
         {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center",marginBottom:10}}>{error}</div>}
         <div style={{maxHeight:300,overflowY:"auto"}}>
-          {defaults.map(name=>(
-            <div key={name} className="row-item">
-              <div style={{flex:1,fontSize:13,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{name}</div>
-              <span style={{fontSize:10,color:"#a7a9be",border:"1px solid #2e2d3d",borderRadius:20,padding:"2px 8px",flexShrink:0}}>default</span>
-            </div>
-          ))}
           {customs.map(cat=>(
             <div key={cat.id} className="row-item">
               {editingId===cat.id ? (
@@ -500,7 +494,7 @@ function CategoryManagerModal({ session, customCats, setCustomCats, transactions
               )}
             </div>
           ))}
-          {customs.length===0&&<div style={{textAlign:"center",color:"#a7a9be",padding:"14px 0",fontSize:12}}>No custom {type} categories yet</div>}
+          {customs.length===0&&<div style={{textAlign:"center",color:"#a7a9be",padding:"14px 0",fontSize:12}}>No {type} categories yet</div>}
         </div>
         <div style={{display:"flex",marginTop:20}}>
           <button className="btn btn-ghost" style={{flex:1}} onClick={onClose}>Done</button>
@@ -587,8 +581,19 @@ function Dashboard({ session, onLogout }) {
         supabase.from("categories").select("*").eq("user_id", session.user.id).order("name"),
       ]);
       if (txRes.error) { setSyncStatus("error"); showToast("Failed to load transactions", "#f25f4c"); return; }
-      // Categories table may not exist yet — fall back to defaults only
-      if (!catRes.error) setCustomCats(catRes.data || []);
+      if (!catRes.error) {
+        let rows = catRes.data || [];
+        // First load for this user (incl. new signups): seed the default categories
+        if (rows.length === 0) {
+          const seed = [
+            ...CATEGORIES.income.map(name  => ({ user_id: session.user.id, type: "income",  name })),
+            ...CATEGORIES.expense.map(name => ({ user_id: session.user.id, type: "expense", name })),
+          ];
+          const { data: seeded } = await supabase.from("categories").insert(seed).select();
+          rows = (seeded || []).sort((a,b) => a.name.localeCompare(b.name));
+        }
+        setCustomCats(rows);
+      }
       const txns = txRes.data || [];
       setTransactions(txns);
       setSyncStatus("synced");
@@ -596,11 +601,12 @@ function Dashboard({ session, onLogout }) {
     })();
   }, []);
 
-  // Defaults (shared by everyone) + this user's custom categories
-  const cats = {
-    income:  [...CATEGORIES.income,  ...customCats.filter(c=>c.type==="income").map(c=>c.name)],
-    expense: [...CATEGORIES.expense, ...customCats.filter(c=>c.type==="expense").map(c=>c.name)],
-  };
+  // This user's categories (defaults are seeded per-user on first load).
+  // Falls back to the built-in list until the fetch/seed completes.
+  const cats = customCats.length ? {
+    income:  customCats.filter(c=>c.type==="income").map(c=>c.name),
+    expense: customCats.filter(c=>c.type==="expense").map(c=>c.name),
+  } : CATEGORIES;
 
   // ── Monthly ──
   const filtered = transactions.filter(t => { const d=new Date(t.date); return d.getMonth()===selectedMonth&&d.getFullYear()===selectedYear; });
