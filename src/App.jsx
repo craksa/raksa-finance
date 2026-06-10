@@ -30,14 +30,17 @@ async function loadBin(binId) {
   });
   if (!res.ok) throw new Error("Load failed");
   const json = await res.json();
-  return Array.isArray(json) ? json : (json.transactions || []);
+  const transactions = Array.isArray(json) ? json : (json.transactions || []);
+  const lastModified = Array.isArray(json) ? 0 : (json.lastModified || 0);
+  return { transactions, lastModified };
 }
 
-async function saveBin(binId, transactions) {
+async function saveBin(binId, transactions, keepalive = false) {
   const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", "X-Master-Key": API_KEY },
-    body: JSON.stringify({ transactions })
+    body: JSON.stringify({ transactions, lastModified: Date.now() }),
+    keepalive,
   });
   if (!res.ok) throw new Error("Save failed");
 }
@@ -144,48 +147,64 @@ function Dashboard({ user, onLogout }) {
   const isFirst = useRef(true);
   const saveTimer = useRef(null);
   const latestTxn = useRef(transactions);
+  const lastSavedJson = useRef(JSON.stringify(transactions));
 
   const fmt = n => currency === "USD" ? fmtUSD(n) : fmtKHR(n);
   const showToast = (msg, color="#2cb67d") => { setToast({msg,color}); setTimeout(()=>setToast(null),3000); };
 
   useEffect(() => { latestTxn.current = transactions; }, [transactions]);
 
-  // Load from JSONBin on mount
+  // Load from JSONBin on mount — cloud wins when its timestamp is newer
   useEffect(() => {
     (async () => {
       setSyncStatus("loading");
       try {
-        const data = await loadBin(user.binId);
-        if (data.length >= latestTxn.current.length) {
-          setTransactions(data);
-          localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+        const { transactions: cloudTxn, lastModified: cloudTs } = await loadBin(user.binId);
+        const localTs = Number(localStorage.getItem(LOCAL_KEY + "_ts") || 0);
+        if (cloudTs >= localTs) {
+          setTransactions(cloudTxn);
+          localStorage.setItem(LOCAL_KEY, JSON.stringify(cloudTxn));
+          localStorage.setItem(LOCAL_KEY + "_ts", String(cloudTs));
+          lastSavedJson.current = JSON.stringify(cloudTxn); // prevent redundant re-upload
         }
         setSyncStatus("synced");
       } catch(e) { setSyncStatus("offline"); }
     })();
   }, []);
 
-  // Save on change — only when data truly changes, debounced 8s to save API calls
-  const lastSavedJson = useRef(JSON.stringify(transactions));
+  // Save on change — debounced 8s; flush immediately on tab close
   useEffect(() => {
     if (isFirst.current) { isFirst.current = false; return; }
     const newJson = JSON.stringify(transactions);
-    if (newJson === lastSavedJson.current) return; // skip if nothing changed
+    if (newJson === lastSavedJson.current) return;
     lastSavedJson.current = newJson;
-    try { localStorage.setItem(LOCAL_KEY, newJson); } catch(e){} // instant local save
+    try { localStorage.setItem(LOCAL_KEY, newJson); } catch(e){}
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       setSyncStatus("saving");
       try {
         await saveBin(user.binId, latestTxn.current);
+        localStorage.setItem(LOCAL_KEY + "_ts", String(Date.now()));
         setSyncStatus("synced");
         showToast("Saved ✓");
       } catch(e) {
         setSyncStatus("offline");
         showToast("Saved locally (cloud failed)", "#ff8906");
       }
-    }, 8000); // 8s debounce = max ~1 API call per 8s per user
+    }, 8000);
   }, [transactions]);
+
+  // Flush any pending cloud save when the tab closes
+  useEffect(() => {
+    const flush = () => {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveBin(user.binId, latestTxn.current, true);
+      }
+    };
+    window.addEventListener("beforeunload", flush);
+    return () => window.removeEventListener("beforeunload", flush);
+  }, []);
 
   // ── Monthly ──
   const filtered = transactions.filter(t => { const d=new Date(t.date); return d.getMonth()===selectedMonth&&d.getFullYear()===selectedYear; });
