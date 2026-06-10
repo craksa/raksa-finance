@@ -271,7 +271,7 @@ function Dashboard({ user, onLogout }) {
   const tabs = [{id:"dashboard",label:"Overview"},{id:"report",label:"Monthly"},{id:"yearly",label:"Yearly"},{id:"all",label:"History"}];
 
   return (
-    <div style={{minHeight:"100vh",background:"#0f0e17",fontFamily:"'DM Mono','Courier New',monospace",color:"#fffffe"}}>
+    <div style={{minHeight:"100vh",background:"#0f0e17",fontFamily:"'DM Mono','Courier New',monospace",color:"#fffffe",overflowX:"hidden",width:"100%"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
@@ -281,8 +281,8 @@ function Dashboard({ user, onLogout }) {
         .btn-ghost{background:transparent;color:#a7a9be;border:1px solid #2e2d3d}.btn-ghost:hover{border-color:#ff8906;color:#ff8906}
         .btn-danger{background:transparent;color:#f25f4c;border:1px solid #f25f4c22;font-size:11px;padding:5px 10px}.btn-danger:hover{background:#f25f4c22}
         .btn-edit{background:transparent;color:#a7a9be;border:1px solid #2e2d3d;font-size:11px;padding:5px 10px}.btn-edit:hover{border-color:#ff8906;color:#ff8906}
-        .card{background:#1a1929;border:1px solid #2e2d3d;border-radius:12px;padding:20px}
-        .input{background:#12111f;border:1px solid #2e2d3d;border-radius:6px;color:#fffffe;font-family:inherit;font-size:13px;padding:10px 14px;width:100%;outline:none;transition:border .15s}
+        .card{background:#1a1929;border:1px solid #2e2d3d;border-radius:12px;padding:20px;box-sizing:border-box;width:100%}
+        .input{background:#12111f;border:1px solid #2e2d3d;border-radius:6px;color:#fffffe;font-family:inherit;font-size:13px;padding:10px 14px;width:100%;outline:none;transition:border .15s;box-sizing:border-box}
         .input:focus{border-color:#ff8906} select.input option{background:#1a1929}
         .tab{cursor:pointer;padding:8px 14px;border-radius:6px;font-size:12px;color:#a7a9be;transition:all .15s;border:none;background:transparent;font-family:inherit;white-space:nowrap}
         .tab.active{background:#ff8906;color:#0f0e17;font-weight:500}
@@ -290,9 +290,9 @@ function Dashboard({ user, onLogout }) {
         .tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px}
         .tag-income{background:#2cb67d22;color:#2cb67d}.tag-expense{background:#f25f4c22;color:#f25f4c}
         .overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
-        .modal{background:#1a1929;border:1px solid #2e2d3d;border-radius:16px;padding:28px;width:100%;max-width:440px;max-height:90vh;overflow-y:auto}
+        .modal{background:#1a1929;border:1px solid #2e2d3d;border-radius:16px;padding:28px;width:calc(100% - 32px);max-width:440px;max-height:90vh;overflow-y:auto;box-sizing:border-box}
         .type-toggle{display:flex;background:#12111f;border-radius:8px;padding:4px;gap:4px}
-        .type-btn{flex:1;padding:8px;border-radius:6px;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;transition:all .15s}
+        .type-btn{flex:1;padding:8px;border-radius:6px;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;transition:all .15s;min-width:0;box-sizing:border-box}
         .type-btn.income.active{background:#2cb67d;color:#fff}.type-btn.expense.active{background:#f25f4c;color:#fff}
         .type-btn:not(.active){background:transparent;color:#a7a9be}
         .stat-value{font-family:'Syne',sans-serif;font-weight:800}
@@ -316,7 +316,7 @@ function Dashboard({ user, onLogout }) {
         .header-wrap{background:#12111f;border-bottom:1px solid #2e2d3d;padding:14px 20px}
         .nav-wrap{padding:14px 20px;display:flex;flex-direction:column;gap:12px}
         .content-wrap{padding:0 20px 100px}
-        .stats-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+        .stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:100%}
         .stats-card{text-align:center;padding:14px}
         .stat-label{font-size:10px;color:#a7a9be;margin-bottom:6px}
         .currency-short{display:none}
@@ -334,15 +334,17 @@ function Dashboard({ user, onLogout }) {
           .nav-wrap{padding:8px 12px;gap:8px}
           .content-wrap{padding:0 12px 100px}
           .stats-grid{gap:6px}
-          .stats-card{padding:8px 4px}
-          .stat-value{font-size:11px!important}
+          .stats-card{padding:10px 6px!important}
+          .stat-value{font-size:13px!important}
           .stat-label{font-size:9px!important}
-          .row-tag{display:none}
-          .row-edit-btn{display:none}
+          .row-tag{display:none!important}
+          .row-edit-btn{display:none!important}
+          .row-amount{min-width:0!important;flex-shrink:0;font-size:12px!important}
           .row-item{gap:6px;padding:10px 0}
           .currency-full{display:none}
           .currency-short{display:inline}
           .btn-add{padding:6px 10px!important;font-size:12px!important}
+          .btn-danger{width:28px!important;height:28px!important;padding:0!important;display:flex!important;align-items:center;justify-content:center;flex-shrink:0}
         }
       `}</style>
 
@@ -423,7 +425,7 @@ function Dashboard({ user, onLogout }) {
                       <div style={{fontSize:11,color:"#a7a9be"}}>{t.note||t.date}</div>
                     </div>
                     <span className={`tag tag-${t.type} row-tag`}>{t.type}</span>
-                    <div style={{fontWeight:500,color:t.type==="income"?"#2cb67d":"#f25f4c",fontSize:12,minWidth:70,textAlign:"right"}}>{t.type==="income"?"+":"-"}{fmt(t.amount)}</div>
+                    <div className="row-amount" style={{fontWeight:500,color:t.type==="income"?"#2cb67d":"#f25f4c",fontSize:12,minWidth:70,textAlign:"right"}}>{t.type==="income"?"+":"-"}{fmt(t.amount)}</div>
                     <button className="btn-edit btn row-edit-btn" onClick={()=>handleEdit(t)}>✎</button>
                     <button className="btn-danger btn" onClick={()=>handleDelete(t.id)}>✕</button>
                   </div>
@@ -546,9 +548,9 @@ function Dashboard({ user, onLogout }) {
                     <div style={{fontSize:13,fontWeight:500}}>{t.category}</div>
                     {t.note&&<div style={{fontSize:11,color:"#a7a9be"}}>{t.note}</div>}
                   </div>
-                  <span className={`tag tag-${t.type}`}>{t.type}</span>
-                  <div style={{fontWeight:500,color:t.type==="income"?"#2cb67d":"#f25f4c",fontSize:12,minWidth:70,textAlign:"right"}}>{t.type==="income"?"+":"-"}{fmt(t.amount)}</div>
-                  <button className="btn-edit btn" onClick={()=>handleEdit(t)}>✎</button>
+                  <span className={`tag tag-${t.type} row-tag`}>{t.type}</span>
+                  <div className="row-amount" style={{fontWeight:500,color:t.type==="income"?"#2cb67d":"#f25f4c",fontSize:12,minWidth:70,textAlign:"right"}}>{t.type==="income"?"+":"-"}{fmt(t.amount)}</div>
+                  <button className="btn-edit btn row-edit-btn" onClick={()=>handleEdit(t)}>✎</button>
                   <button className="btn-danger btn" onClick={()=>handleDelete(t.id)}>✕</button>
                 </div>
               ))}
@@ -575,8 +577,8 @@ function Dashboard({ user, onLogout }) {
               <input className="input" type="text" placeholder="Note (optional)" value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))}/>
             </div>
             <div style={{display:"flex",gap:10,marginTop:20}}>
-              <button className="btn btn-ghost" style={{flex:1}} onClick={()=>{setShowForm(false);setEditId(null);}}>Cancel</button>
-              <button className="btn btn-primary" style={{flex:2}} onClick={handleSubmit}>{editId?"Save Changes":"Add Transaction"}</button>
+              <button className="btn btn-ghost" style={{flex:1,minWidth:0}} onClick={()=>{setShowForm(false);setEditId(null);}}>Cancel</button>
+              <button className="btn btn-primary" style={{flex:2,minWidth:0}} onClick={handleSubmit}>{editId?"Save Changes":"Add Transaction"}</button>
             </div>
           </div>
         </div>
