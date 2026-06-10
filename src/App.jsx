@@ -573,7 +573,7 @@ function Dashboard({ user, onLogout }) {
                 {CATEGORIES[form.type].map(c=><option key={c} value={c}>{c}</option>)}
               </select>
               <input className="input" type="number" placeholder="Amount (USD)" min="0" step="0.01" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
-              <input className="input" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/>
+              <input className="input" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={{textAlign:"left"}}/>
               <input className="input" type="text" placeholder="Note (optional)" value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))}/>
             </div>
             <div style={{display:"flex",gap:10,marginTop:20}}>
