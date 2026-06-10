@@ -9,7 +9,7 @@ const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov
 const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const now = new Date();
 
-// Username → email mapping (private app, fixed user set)
+// Existing users: username → email (for backward-compat username login)
 const USERNAME_MAP = {
   raksa:  { email: "raksask90@gmail.com",    display: "Raksa" },
   dara:   { email: "dara@gmail.com",         display: "Dara" },
@@ -25,6 +25,14 @@ function getDisplayName(session) {
   const email = session?.user?.email || "";
   const match = Object.entries(USERNAME_MAP).find(([, v]) => v.email === email);
   return match ? match[1].display : email.split("@")[0];
+}
+
+// Resolve login input (username or email) to an email address
+function resolveEmail(input) {
+  const v = input.trim().toLowerCase();
+  if (v.includes("@")) return v;
+  if (USERNAME_MAP[v]) return USERNAME_MAP[v].email;
+  return null;
 }
 
 // ── Shared auth shell ──
@@ -48,18 +56,18 @@ const authInp = {background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,
 
 // ── Login Screen ──
 function LoginScreen({ onSwitch }) {
-  const [username, setUsername] = useState("");
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleLogin() {
-    if (!username || !password) { setError("Please fill in all fields"); return; }
-    const user = USERNAME_MAP[username.toLowerCase().trim()];
-    if (!user) { setError("User not found"); return; }
+    if (!login || !password) { setError("Please fill in all fields"); return; }
+    const email = resolveEmail(login);
+    if (!email) { setError("User not found. New users must sign in with their email."); return; }
     setLoading(true); setError("");
-    const { error } = await supabase.auth.signInWithPassword({ email: user.email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) setError(error.message);
   }
@@ -69,7 +77,7 @@ function LoginScreen({ onSwitch }) {
       <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
         <div style={{fontSize:14,fontWeight:500,marginBottom:20,color:"#fffffe"}}>Sign In</div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          <input style={authInp} placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} autoCapitalize="none" autoComplete="username"/>
+          <input style={authInp} placeholder="Username or Email" value={login} onChange={e=>setLogin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} autoCapitalize="none" autoComplete="username"/>
           <div style={{position:"relative"}}>
             <input style={{...authInp,padding:"10px 40px 10px 14px"}} type={showPw?"text":"password"} placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} autoComplete="current-password"/>
             <button onClick={()=>setShowPw(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:13}}>{showPw?"Hide":"Show"}</button>
@@ -78,8 +86,84 @@ function LoginScreen({ onSwitch }) {
           <button onClick={handleLogin} disabled={loading} style={{background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:6,padding:"12px",fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4,opacity:loading?0.7:1}}>
             {loading?"Signing in...":"Sign In"}
           </button>
-          <div style={{textAlign:"center",marginTop:4}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
             <button onClick={()=>onSwitch("forgot")} style={{background:"none",border:"none",color:"#a7a9be",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Forgot password?</button>
+            <button onClick={()=>onSwitch("signup")} style={{background:"none",border:"none",color:"#ff8906",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Create account →</button>
+          </div>
+        </div>
+      </div>
+    </AuthShell>
+  );
+}
+
+// ── Sign Up Screen ──
+function SignupScreen({ onSwitch }) {
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSignup() {
+    const uname = username.trim().toLowerCase();
+    const mail  = email.trim().toLowerCase();
+    if (!uname || !mail || !password) { setError("Please fill in all fields"); return; }
+    if (!/^[a-z0-9_]+$/.test(uname))  { setError("Username: letters, numbers and _ only"); return; }
+    if (USERNAME_MAP[uname])           { setError("Username already taken"); return; }
+    if (password !== confirm)          { setError("Passwords do not match"); return; }
+    if (password.length < 6)           { setError("Password must be at least 6 characters"); return; }
+    setLoading(true); setError("");
+    const { error } = await supabase.auth.signUp({
+      email: mail,
+      password,
+      options: { data: { username: uname } },
+    });
+    setLoading(false);
+    if (error) {
+      const msg = error.message.toLowerCase();
+      if (msg.includes("already registered") || msg.includes("already in use")) {
+        setError("Email already registered — try signing in");
+      } else {
+        setError(error.message);
+      }
+      return;
+    }
+    setSuccess(true);
+  }
+
+  if (success) return (
+    <AuthShell subtitle="Account created!">
+      <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28,textAlign:"center"}}>
+        <div style={{fontSize:32,marginBottom:16}}>✉️</div>
+        <div style={{color:"#2cb67d",fontWeight:500,marginBottom:8}}>Check your email</div>
+        <div style={{color:"#a7a9be",fontSize:12,marginBottom:4}}>We sent a confirmation link to <strong style={{color:"#fffffe"}}>{email}</strong>.</div>
+        <div style={{color:"#a7a9be",fontSize:12,marginBottom:20}}>After confirming, sign in with your <strong style={{color:"#fffffe"}}>email address</strong>.</div>
+        <button onClick={()=>onSwitch("login")} style={{background:"none",border:"1px solid #2e2d3d",borderRadius:6,color:"#a7a9be",fontSize:13,cursor:"pointer",fontFamily:"inherit",padding:"10px 20px"}}>← Back to Sign In</button>
+      </div>
+    </AuthShell>
+  );
+
+  return (
+    <AuthShell subtitle="Create your account">
+      <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
+        <div style={{fontSize:14,fontWeight:500,marginBottom:20,color:"#fffffe"}}>Create Account</div>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <input style={authInp} placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} autoCapitalize="none" autoComplete="username"/>
+          <input style={authInp} type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} autoCapitalize="none" autoComplete="email"/>
+          <div style={{position:"relative"}}>
+            <input style={{...authInp,padding:"10px 40px 10px 14px"}} type={showPw?"text":"password"} placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="new-password"/>
+            <button onClick={()=>setShowPw(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:13}}>{showPw?"Hide":"Show"}</button>
+          </div>
+          <input style={authInp} type="password" placeholder="Confirm password" value={confirm} onChange={e=>setConfirm(e.target.value)} autoComplete="new-password"/>
+          {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
+          <button onClick={handleSignup} disabled={loading} style={{background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:6,padding:"12px",fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4,opacity:loading?0.7:1}}>
+            {loading?"Creating account...":"Create Account"}
+          </button>
+          <div style={{textAlign:"center",marginTop:4}}>
+            <button onClick={()=>onSwitch("login")} style={{background:"none",border:"none",color:"#a7a9be",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>← Back to Sign In</button>
           </div>
         </div>
       </div>
@@ -89,17 +173,17 @@ function LoginScreen({ onSwitch }) {
 
 // ── Forgot Password Screen ──
 function ForgotPasswordScreen({ onSwitch }) {
-  const [username, setUsername] = useState("");
+  const [login, setLogin] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleReset() {
-    if (!username) { setError("Please enter your username"); return; }
-    const user = USERNAME_MAP[username.toLowerCase().trim()];
-    if (!user) { setError("User not found"); return; }
+    if (!login) { setError("Please enter your username or email"); return; }
+    const email = resolveEmail(login);
+    if (!email) { setError("User not found"); return; }
     setLoading(true); setError("");
-    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin + window.location.pathname,
     });
     setLoading(false);
@@ -122,9 +206,9 @@ function ForgotPasswordScreen({ onSwitch }) {
     <AuthShell subtitle="Reset your password">
       <div style={{background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:16,padding:28}}>
         <div style={{fontSize:14,fontWeight:500,marginBottom:8,color:"#fffffe"}}>Forgot Password</div>
-        <div style={{fontSize:12,color:"#a7a9be",marginBottom:20}}>Enter your username and we'll send a reset link.</div>
+        <div style={{fontSize:12,color:"#a7a9be",marginBottom:20}}>Enter your username or email to get a reset link.</div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          <input style={authInp} placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleReset()} autoCapitalize="none"/>
+          <input style={authInp} placeholder="Username or Email" value={login} onChange={e=>setLogin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleReset()} autoCapitalize="none"/>
           {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
           <button onClick={handleReset} disabled={loading} style={{background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:6,padding:"12px",fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4,opacity:loading?0.7:1}}>
             {loading?"Sending...":"Send Reset Email"}
@@ -165,21 +249,115 @@ function ChangePasswordModal({ force, onDone, onClose }) {
         {!force&&<div style={{marginBottom:20}}/>}
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{position:"relative"}}>
-            <input
-              style={{background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 40px 10px 14px",width:"100%",outline:"none",boxSizing:"border-box"}}
-              type={showPw?"text":"password"} placeholder="New password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="new-password"
-            />
+            <input style={{background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 40px 10px 14px",width:"100%",outline:"none",boxSizing:"border-box"}} type={showPw?"text":"password"} placeholder="New password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="new-password"/>
             <button onClick={()=>setShowPw(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:13}}>{showPw?"Hide":"Show"}</button>
           </div>
-          <input
-            style={{background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 14px",width:"100%",outline:"none",boxSizing:"border-box"}}
-            type="password" placeholder="Confirm new password" value={confirm} onChange={e=>setConfirm(e.target.value)} autoComplete="new-password"
-          />
+          <input style={{background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 14px",width:"100%",outline:"none",boxSizing:"border-box"}} type="password" placeholder="Confirm new password" value={confirm} onChange={e=>setConfirm(e.target.value)} autoComplete="new-password"/>
           {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
         </div>
         <div style={{display:"flex",gap:10,marginTop:20}}>
           {!force&&<button className="btn btn-ghost" style={{flex:1,minWidth:0}} onClick={onClose}>Cancel</button>}
           <button className="btn btn-primary" style={{flex:force?1:2,minWidth:0}} onClick={handleChange} disabled={loading}>{loading?"Saving...":"Update Password"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── User Profile Modal ──
+function UserProfileModal({ session, onClose, showToast }) {
+  const [displayName, setDisplayName] = useState(session.user.user_metadata?.username || "");
+  const [email, setEmail]             = useState(session.user.email || "");
+  const [newPw, setNewPw]             = useState("");
+  const [confirmPw, setConfirmPw]     = useState("");
+  const [showPw, setShowPw]           = useState(false);
+  const [showPwSection, setShowPwSection] = useState(false);
+  const [error, setError]             = useState("");
+  const [saving, setSaving]           = useState(false);
+
+  async function handleSave() {
+    setError("");
+    const updates = {};
+    const trimName  = displayName.trim();
+    const trimEmail = email.trim().toLowerCase();
+
+    if (!trimName) { setError("Display name cannot be empty"); return; }
+
+    if (trimName !== (session.user.user_metadata?.username || "")) {
+      updates.data = { username: trimName };
+    }
+    if (trimEmail !== session.user.email) {
+      if (!trimEmail.includes("@")) { setError("Enter a valid email address"); return; }
+      updates.email = trimEmail;
+    }
+    if (newPw) {
+      if (newPw.length < 6)   { setError("Password must be at least 6 characters"); return; }
+      if (newPw !== confirmPw) { setError("Passwords do not match"); return; }
+      updates.password = newPw;
+    }
+
+    if (Object.keys(updates).length === 0) { onClose(); return; }
+
+    setSaving(true);
+    const { error } = await supabase.auth.updateUser(updates);
+    setSaving(false);
+    if (error) { setError(error.message); return; }
+
+    const notes = [];
+    if (updates.data)     notes.push("Name updated");
+    if (updates.email)    notes.push("Verification sent to new email");
+    if (updates.password) notes.push("Password changed");
+    showToast(notes.join(" · ") + " ✓");
+    onClose();
+  }
+
+  const mInp = {background:"#12111f",border:"1px solid #2e2d3d",borderRadius:6,color:"#fffffe",fontFamily:"inherit",fontSize:13,padding:"10px 14px",width:"100%",outline:"none",boxSizing:"border-box"};
+
+  return (
+    <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal">
+        <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>Account Settings</div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {/* Display name */}
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Display Name</label>
+            <input style={mInp} value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="Your name" autoComplete="nickname"/>
+          </div>
+
+          {/* Email */}
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Email</label>
+            <input style={mInp} type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email"/>
+            {email.trim().toLowerCase() !== session.user.email &&
+              <div style={{fontSize:11,color:"#ff8906",paddingLeft:2}}>A verification link will be sent to the new address</div>}
+          </div>
+
+          {/* Password section (collapsible) */}
+          <div style={{borderTop:"1px solid #2e2d3d",paddingTop:14}}>
+            <button
+              onClick={()=>{setShowPwSection(s=>!s);setNewPw("");setConfirmPw("");}}
+              style={{background:"none",border:"none",color:"#a7a9be",fontSize:12,cursor:"pointer",fontFamily:"inherit",padding:0}}
+            >
+              {showPwSection?"▲ Hide password change":"▼ Change password"}
+            </button>
+            {showPwSection&&(
+              <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:12}}>
+                <div style={{position:"relative"}}>
+                  <input style={{...mInp,paddingRight:50}} type={showPw?"text":"password"} placeholder="New password" value={newPw} onChange={e=>setNewPw(e.target.value)} autoComplete="new-password"/>
+                  <button onClick={()=>setShowPw(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#a7a9be",cursor:"pointer",fontSize:13}}>{showPw?"Hide":"Show"}</button>
+                </div>
+                <input style={mInp} type="password" placeholder="Confirm new password" value={confirmPw} onChange={e=>setConfirmPw(e.target.value)} autoComplete="new-password"/>
+              </div>
+            )}
+          </div>
+
+          {error&&<div style={{color:"#f25f4c",fontSize:12,textAlign:"center"}}>{error}</div>}
+        </div>
+
+        <div style={{display:"flex",gap:10,marginTop:20}}>
+          <button className="btn btn-ghost" style={{flex:1,minWidth:0}} onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" style={{flex:2,minWidth:0}} onClick={handleSave} disabled={saving}>{saving?"Saving...":"Save Changes"}</button>
         </div>
       </div>
     </div>
@@ -203,6 +381,7 @@ export default function App() {
       } else if (event === "SIGNED_OUT") {
         setAuthView("login");
       }
+      // USER_UPDATED: setSession(session) above already refreshes the display name
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -212,7 +391,8 @@ export default function App() {
       Loading...
     </div>
   );
-  if (authView === "login") return <LoginScreen onSwitch={setAuthView}/>;
+  if (authView === "login")  return <LoginScreen  onSwitch={setAuthView}/>;
+  if (authView === "signup") return <SignupScreen  onSwitch={setAuthView}/>;
   if (authView === "forgot") return <ForgotPasswordScreen onSwitch={setAuthView}/>;
   if (!session) return <LoginScreen onSwitch={setAuthView}/>;
 
@@ -228,17 +408,18 @@ export default function App() {
 
 // ── Dashboard ──
 function Dashboard({ session, onLogout, forceChangePassword, onPasswordChanged }) {
-  const [transactions, setTransactions] = useState([]);
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
-  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-  const [currency, setCurrency] = useState("USD");
-  const [showForm, setShowForm] = useState(false);
-  const [showChangePw, setShowChangePw] = useState(false);
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [transactions, setTransactions]         = useState([]);
+  const [selectedMonth, setSelectedMonth]       = useState(now.getMonth());
+  const [selectedYear, setSelectedYear]         = useState(now.getFullYear());
+  const [currency, setCurrency]                 = useState("USD");
+  const [showForm, setShowForm]                 = useState(false);
+  const [showChangePw, setShowChangePw]         = useState(false);
+  const [showProfile, setShowProfile]           = useState(false);
+  const [activeTab, setActiveTab]               = useState("dashboard");
   const [form, setForm] = useState({ type:"income", category:"", amount:"", note:"", date:now.toISOString().split("T")[0] });
-  const [editId, setEditId] = useState(null);
-  const [syncStatus, setSyncStatus] = useState("loading");
-  const [toast, setToast] = useState(null);
+  const [editId, setEditId]                     = useState(null);
+  const [syncStatus, setSyncStatus]             = useState("loading");
+  const [toast, setToast]                       = useState(null);
   const [showMigrationBanner, setShowMigrationBanner] = useState(false);
 
   useEffect(() => { if (forceChangePassword) setShowChangePw(true); }, [forceChangePassword]);
@@ -459,7 +640,7 @@ function Dashboard({ session, onLogout, forceChangePassword, onPasswordChanged }
             <div style={{textAlign:"right"}}>
               <div style={{fontSize:12,fontWeight:500,color:"#fffffe"}}>{displayName}</div>
               <div style={{display:"flex",gap:6,justifyContent:"flex-end",marginTop:2}}>
-                <button onClick={()=>setShowChangePw(true)} style={{fontSize:10,color:"#a7a9be",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Change pw</button>
+                <button onClick={()=>setShowProfile(true)} style={{fontSize:10,color:"#ff8906",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Profile</button>
                 <span style={{color:"#2e2d3d",fontSize:10}}>·</span>
                 <button onClick={onLogout} style={{fontSize:10,color:"#a7a9be",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Sign out</button>
               </div>
@@ -713,12 +894,21 @@ function Dashboard({ session, onLogout, forceChangePassword, onPasswordChanged }
         </div>
       )}
 
-      {/* Change Password Modal */}
+      {/* Change Password Modal (password-recovery flow) */}
       {showChangePw&&(
         <ChangePasswordModal
           force={forceChangePassword}
           onDone={()=>{ setShowChangePw(false); if(forceChangePassword) onPasswordChanged(); showToast("Password updated ✓"); }}
           onClose={()=>setShowChangePw(false)}
+        />
+      )}
+
+      {/* User Profile Modal */}
+      {showProfile&&(
+        <UserProfileModal
+          session={session}
+          onClose={()=>setShowProfile(false)}
+          showToast={showToast}
         />
       )}
     </div>
