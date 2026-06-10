@@ -287,20 +287,31 @@ function Dashboard({ user, onLogout }) {
         .import-wrap input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
         .pulse{animation:pulse 1.2s ease infinite}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+        .header-title{font-family:'Syne',sans-serif;font-size:clamp(16px,4.5vw,20px);font-weight:800;color:#ff8906}
+        .header-actions{display:flex;gap:8px;align-items:center}
+        @media(max-width:600px){
+          .header-actions{width:100%;justify-content:flex-end}
+          .btn-danger{padding:9px 12px;font-size:12px}
+          .btn-edit{padding:9px 12px;font-size:12px}
+          .nav-btn{width:40px;height:40px;font-size:18px}
+          .overlay{align-items:flex-end;padding:0}
+          .modal{border-radius:20px 20px 0 0;max-height:92vh;max-width:100%;width:100%}
+          .input{min-height:44px}
+        }
       `}</style>
 
       {toast&&<div className="toast" style={{background:toast.color,color:"#fff"}}>{toast.msg}</div>}
 
       {/* Header */}
       <div style={{background:"#12111f",borderBottom:"1px solid #2e2d3d",padding:"14px 20px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
           <div>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#ff8906"}}>Incomes and Expenses</div>
+            <div className="header-title">Incomes and Expenses</div>
             <div style={{fontSize:10,color:st.color,marginTop:2}} className={syncStatus==="saving"||syncStatus==="loading"?"pulse":""}>
               {st.label}
             </div>
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <div className="header-actions">
             <div style={{textAlign:"right"}}>
               <div style={{fontSize:12,fontWeight:500,color:"#fffffe"}}>{user.displayName}</div>
               <button onClick={onLogout} style={{fontSize:10,color:"#a7a9be",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Sign out</button>
