@@ -299,7 +299,7 @@ function Dashboard({ user, onLogout }) {
         .type-btn{flex:1;padding:8px;border-radius:6px;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:500;transition:all .15s;min-width:0;box-sizing:border-box}
         .type-btn.income.active{background:#2cb67d;color:#fff}.type-btn.expense.active{background:#f25f4c;color:#fff}
         .type-btn:not(.active){background:transparent;color:#a7a9be}
-        .stat-value{font-family:'Syne',sans-serif;font-weight:800}
+        .stat-value{font-family:Tahoma,sans-serif;font-weight:800}
         .nav-btn{background:transparent;border:1px solid #2e2d3d;color:#a7a9be;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .15s}
         .nav-btn:hover{border-color:#ff8906;color:#ff8906}
         .row-item{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #1e1d2e}
