@@ -748,7 +748,7 @@ function Dashboard({ session, onLogout }) {
         .card{background:#1a1929;border:1px solid #2e2d3d;border-radius:12px;padding:20px;box-sizing:border-box;width:100%}
         .input{background:#12111f;border:1px solid #2e2d3d;border-radius:6px;color:#fffffe;font-family:inherit;font-size:13px;padding:10px 14px;width:100%;outline:none;transition:border .15s;box-sizing:border-box}
         .input:focus{border-color:#ff8906} select.input option{background:#1a1929}
-        input[type=date].input{text-align:left;display:block}
+        input[type=date].input{text-align:left;display:block;-webkit-appearance:none;appearance:none;min-width:0;max-width:100%;min-height:38px}
         input[type=date].input::-webkit-date-and-time-value{text-align:left;margin:0}
         input[type=date].input::-webkit-datetime-edit{text-align:left;padding:0}
         .tab{cursor:pointer;padding:8px 14px;border-radius:6px;font-size:12px;color:#a7a9be;transition:all .15s;border:none;background:transparent;font-family:inherit;white-space:nowrap}
