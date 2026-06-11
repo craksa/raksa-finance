@@ -7,6 +7,25 @@
     <meta name="description" content="Incomes and Expenses Finance Tracker" />
     <title>Incomes and Expenses</title>
     <style>*{box-sizing:border-box}html,body,#root{margin:0;padding:0;overflow-x:hidden;max-width:100vw;background:#0f0e17}</style>
+    <script>
+      // Must run before the app bundle: browser extensions (e.g. MetaMask)
+      // inject scripts into the page, and their errors would otherwise trigger
+      // the dev-server error overlay. Registering first lets us swallow
+      // extension-originated errors before the overlay's listeners see them.
+      (function () {
+        var isExt = function (v) { return typeof v === 'string' && v.indexOf('extension://') !== -1; };
+        window.addEventListener('error', function (e) {
+          if (isExt(e.filename) || isExt(e.error && e.error.stack)) e.stopImmediatePropagation();
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e.reason;
+          if (isExt(r && r.stack) || isExt(r && r.message)) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
