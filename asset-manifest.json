@@ -1,10 +1,10 @@
 {
   "files": {
-    "main.js": "/raksa-finance/static/js/main.88c46dff.js",
+    "main.js": "/raksa-finance/static/js/main.3f591cbf.js",
     "index.html": "/raksa-finance/index.html",
-    "main.88c46dff.js.map": "/raksa-finance/static/js/main.88c46dff.js.map"
+    "main.3f591cbf.js.map": "/raksa-finance/static/js/main.3f591cbf.js.map"
   },
   "entrypoints": [
-    "static/js/main.88c46dff.js"
+    "static/js/main.3f591cbf.js"
   ]
 }
