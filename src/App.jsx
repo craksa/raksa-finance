@@ -20,6 +20,16 @@ const USERNAME_MAP = {
 function fmtUSD(n) { return "$" + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
 function fmtKHR(n) { return "៛" + Math.round(n * 4100).toLocaleString(); }
 
+// dd-Mon-yyyy hh:mm — day comes from the user-picked `date`, time from
+// `created_at` (when the entry was recorded; the date column stores no time).
+function fmtDateTime(t) {
+  const d = t.date;
+  const day = `${d.slice(8,10)}-${MONTHS[parseInt(d.slice(5,7),10)-1]}-${d.slice(0,4)}`;
+  if (!t.created_at) return day;
+  const c = new Date(t.created_at);
+  return `${day} ${String(c.getHours()).padStart(2,"0")}:${String(c.getMinutes()).padStart(2,"0")}`;
+}
+
 function getDisplayName(session) {
   const meta = session?.user?.user_metadata?.username;
   if (meta) return meta.charAt(0).toUpperCase() + meta.slice(1);
@@ -576,6 +586,7 @@ function Dashboard({ session, onLogout }) {
   const [syncStatus, setSyncStatus]             = useState("loading");
   const [toast, setToast]                       = useState(null);
   const [showMigrationBanner, setShowMigrationBanner] = useState(false);
+  const [showUserMenu, setShowUserMenu]         = useState(false);
 
   const fmt = n => currency === "USD" ? fmtUSD(n) : fmtKHR(n);
   const showToast = (msg, color="#2cb67d") => { setToast({msg,color}); setTimeout(()=>setToast(null),3000); };
@@ -639,7 +650,9 @@ function Dashboard({ session, onLogout }) {
   const worstMo = activeMo.length ? activeMo.reduce((a,b)=>b.balance<a.balance?b:a,activeMo[0]) : null;
 
   async function handleSubmit() {
-    if (!form.category||!form.amount||!form.date) return;
+    if (!form.category) { showToast("Please select a category","#f25f4c"); return; }
+    if (!form.amount)   { showToast("Please enter an amount","#f25f4c");  return; }
+    if (!form.date)     { showToast("Please pick a date","#f25f4c");      return; }
     const id = editId;
     setSyncStatus("saving");
     if (id) {
@@ -719,6 +732,7 @@ function Dashboard({ session, onLogout }) {
   const st = syncMap[syncStatus] || syncMap.synced;
   const tabs = [{id:"dashboard",label:"Overview"},{id:"report",label:"Monthly"},{id:"yearly",label:"Yearly"},{id:"all",label:"History"}];
   const displayName = getDisplayName(session);
+  const menuItem = {display:"block",width:"100%",textAlign:"left",padding:"10px 14px",fontSize:12,color:"#fffffe",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",boxSizing:"border-box"};
 
   return (
     <div style={{minHeight:"100vh",background:"#0f0e17",fontFamily:"'DM Mono','Courier New',monospace",color:"#fffffe",overflowX:"hidden",width:"100%",maxWidth:"100vw",position:"relative"}}>
@@ -814,13 +828,26 @@ function Dashboard({ session, onLogout }) {
             </div>
           </div>
           <div className="header-actions">
-            <div style={{textAlign:"right"}}>
-              <div style={{fontSize:12,fontWeight:500,color:"#fffffe"}}>{displayName}</div>
-              <div style={{display:"flex",gap:6,justifyContent:"flex-end",marginTop:2}}>
-                <button onClick={()=>setShowProfile(true)} style={{fontSize:10,color:"#ff8906",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Profile</button>
-                <span style={{color:"#2e2d3d",fontSize:10}}>·</span>
-                <button onClick={onLogout} style={{fontSize:10,color:"#a7a9be",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:0}}>Sign out</button>
-              </div>
+            <div style={{position:"relative"}}>
+              <button className="btn btn-ghost" style={{padding:"6px 12px",fontSize:12,display:"flex",alignItems:"center",gap:6,maxWidth:160}} onClick={()=>setShowUserMenu(v=>!v)}>
+                <span style={{color:"#fffffe",fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayName}</span>
+                <span style={{fontSize:9,transform:showUserMenu?"rotate(180deg)":"none",transition:"transform .15s"}}>▼</span>
+              </button>
+              {showUserMenu && <>
+                <div style={{position:"fixed",inset:0,zIndex:40}} onClick={()=>setShowUserMenu(false)}/>
+                <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:41,background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:10,minWidth:170,overflow:"hidden",boxShadow:"0 8px 24px rgba(0,0,0,.4)"}}>
+                  <button onClick={()=>{setShowUserMenu(false);setShowProfile(true);}} style={menuItem}>👤 Profile</button>
+                  <button onClick={()=>{setShowUserMenu(false);setShowCatManager(true);}} style={menuItem}>⚙ Categories</button>
+                  <div style={{height:1,background:"#2e2d3d"}}/>
+                  <button onClick={()=>{setShowUserMenu(false);exportCSV();}} style={menuItem}>↓ Export CSV</button>
+                  <label style={menuItem}>
+                    ↑ Import CSV
+                    <input type="file" accept=".csv" style={{display:"none"}} onChange={e=>{setShowUserMenu(false);importCSV(e);}}/>
+                  </label>
+                  <div style={{height:1,background:"#2e2d3d"}}/>
+                  <button onClick={()=>{setShowUserMenu(false);onLogout();}} style={{...menuItem,color:"#f25f4c"}}>Sign out</button>
+                </div>
+              </>}
             </div>
             <button className="btn btn-ghost" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setCurrency(c=>c==="USD"?"KHR":"USD")}>
               <span className="currency-full">{currency==="USD"?"$ USD":"៛ KHR"}</span>
@@ -830,14 +857,6 @@ function Dashboard({ session, onLogout }) {
               + Add
             </button>
           </div>
-        </div>
-        <div style={{display:"flex",gap:8,marginTop:10}}>
-          <button className="btn btn-ghost" style={{flex:1,fontSize:11,padding:"7px 10px"}} onClick={exportCSV}>↓ Export CSV</button>
-          <div className="import-wrap">
-            <button className="btn btn-ghost" style={{width:"100%",fontSize:11,padding:"7px 10px"}}>↑ Import CSV</button>
-            <input type="file" accept=".csv" onChange={importCSV}/>
-          </div>
-          <button className="btn btn-ghost" style={{flex:1,fontSize:11,padding:"7px 10px"}} onClick={()=>setShowCatManager(true)}>⚙ Categories</button>
         </div>
       </div>
 
@@ -898,7 +917,7 @@ function Dashboard({ session, onLogout }) {
                   {filtered.slice((txPage-1)*TX_PER_PAGE, txPage*TX_PER_PAGE).map(t=>(
                     <div key={t.id} className="row-item">
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:10,color:"#a7a9be",marginBottom:2}}>{t.date.slice(8,10)} {MONTHS[parseInt(t.date.slice(5,7))-1]}</div>
+                        <div style={{fontSize:10,color:"#a7a9be",marginBottom:2,whiteSpace:"nowrap"}}>{fmtDateTime(t)}</div>
                         <div style={{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.category}</div>
                         {t.note&&<div style={{fontSize:11,color:"#a7a9be"}}>{t.note}</div>}
                       </div>
@@ -1032,7 +1051,7 @@ function Dashboard({ session, onLogout }) {
               :[...filtered].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=>(
                 <div key={t.id} className="row-item">
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:10,color:"#a7a9be",marginBottom:2}}>{t.date.slice(8,10)} {MONTHS[parseInt(t.date.slice(5,7))-1]}</div>
+                    <div style={{fontSize:10,color:"#a7a9be",marginBottom:2,whiteSpace:"nowrap"}}>{fmtDateTime(t)}</div>
                     <div style={{fontSize:13,fontWeight:500}}>{t.category}</div>
                     {t.note&&<div style={{fontSize:11,color:"#a7a9be"}}>{t.note}</div>}
                   </div>
@@ -1051,11 +1070,12 @@ function Dashboard({ session, onLogout }) {
         <div className="overlay" onClick={e=>e.target===e.currentTarget&&setShowForm(false)}>
           <div className="modal">
             <div style={{fontFamily:"Tahoma,sans-serif",fontSize:18,fontWeight:800,marginBottom:20}}>{editId?"Edit Transaction":"New Transaction"}</div>
-            <div className="type-toggle" style={{marginBottom:16}}>
-              {["income","expense"].map(type=>(<button key={type} className={`type-btn ${type} ${form.type===type?"active":""}`} onClick={()=>setForm(f=>({...f,type,category:""}))}>
+            <div className="type-toggle" style={{marginBottom:editId?6:16,opacity:editId?0.55:1}}>
+              {["income","expense"].map(type=>(<button key={type} disabled={!!editId} className={`type-btn ${type} ${form.type===type?"active":""}`} style={editId?{cursor:"not-allowed"}:undefined} onClick={()=>setForm(f=>({...f,type,category:cats[type].includes(f.category)?f.category:""}))}>
                 {type.charAt(0).toUpperCase()+type.slice(1)}
               </button>))}
             </div>
+            {editId&&<div style={{fontSize:10,color:"#a7a9be",marginBottom:16,paddingLeft:2}}>Type can't be changed when editing — delete and re-add to switch.</div>}
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Category</label>
