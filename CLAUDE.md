@@ -48,7 +48,6 @@ supabase/
   shop.sql            — shop_products/sales/restock + box/pack pricing columns (applied)
   shop_categories.sql — per-user shop categories + RLS (applied)
   admin.sql           — profiles access flags, is_admin(), admin RLS (applied)
-  functions/admin-delete-user/index.ts — Edge Function: admin-verified delete + CSV email (NOT deployed yet)
 public/
   index.html
 ```
@@ -80,7 +79,7 @@ All per-user tables have RLS (`user_id = auth.uid()`), plus an `is_admin()` poli
 
 ## User management (AdminApp, admin only)
 - Lists all profiles; per user toggle Finance / Shop / Admin / Disabled (self-protected against lockout).
-- **Delete**: requires admin to re-enter their password → exports the user's data to CSV (downloaded locally) → calls the `admin-delete-user` Edge Function (emails CSV + removes auth account). Until that function is deployed, it falls back to wiping data + disabling the account.
+- **Disabled** locks an account out instantly (reversible) — the user is signed out on next load. There is no hard delete (would require a service-role Edge Function, intentionally not used); use Disable instead.
 - Categories (both finance & shop): seeded with defaults on first load; rename keeps records in sync; delete blocked while in use.
 
 ## Shop business context
