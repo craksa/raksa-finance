@@ -1,9 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 
-// Only these accounts can access the shop
-const SHOP_ALLOWED = ["raksask90@gmail.com", "raksa.chou99@gmail.com"];
-
 const KHR_RATE = 4100;
 const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const SHOP_CATS = [
@@ -38,14 +35,16 @@ const BLANK_PROD = { name_en:"", name_kh:"", category:SHOP_CATS[0], cost_price:"
 const BLANK_SALE = { product_id:"", qty:"1", mode:"unit", date:todayStr(), note:"" };
 const BLANK_RESTOCK = { qty:"", mode:"unit", cost_per_unit:"", date:todayStr(), note:"" };
 
-export default function ShopApp({ session, onBack }) {
+export default function ShopApp({ session, onBack, canShop = true }) {
   const [tab, setTab]             = useState("products");
   const [cur, setCur]             = useState("USD");
   const [products, setProducts]   = useState([]);
   const [sales, setSales]         = useState([]);
+  const [shopCats, setShopCats]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [toast, setToast]         = useState(null);
   const [search, setSearch]       = useState("");
+  const [showCatMgr, setShowCatMgr] = useState(false);
 
   // Product form
   const [showProdForm, setShowProdForm] = useState(false);
@@ -67,14 +66,13 @@ export default function ShopApp({ session, onBack }) {
 
   const fmt = n => cur === "USD" ? fmtUSD(n) : fmtKHR(n);
   const uid = session.user.id;
-  const email = session.user.email;
   const showToast = (msg, color = "#2cb67d") => {
     setToast({ msg, color });
     setTimeout(() => setToast(null), 3000);
   };
 
   // ── Access guard ──
-  if (!SHOP_ALLOWED.includes(email)) {
+  if (!canShop) {
     return (
       <div style={{ minHeight:"100vh", background:"#0f0e17", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", fontFamily:"'DM Mono',monospace", textAlign:"center", padding:20 }}>
         <div style={{ fontSize:40, marginBottom:16 }}>⛔</div>
@@ -90,17 +88,32 @@ export default function ShopApp({ session, onBack }) {
 
   async function loadAll() {
     setLoading(true);
-    const [pRes, sRes] = await Promise.all([
+    const [pRes, sRes, cRes] = await Promise.all([
       supabase.from("shop_products").select("*").eq("user_id", uid).order("name_en"),
       supabase.from("shop_sales").select("*").eq("user_id", uid).order("date", { ascending:false }).order("created_at", { ascending:false }),
+      supabase.from("shop_categories").select("*").eq("user_id", uid).order("name"),
     ]);
     if (!pRes.error) setProducts(pRes.data || []);
     if (!sRes.error) setSales(sRes.data || []);
+    if (!cRes.error) {
+      let rows = cRes.data || [];
+      // First load for this user: seed the default categories.
+      if (rows.length === 0) {
+        const { data: seeded } = await supabase.from("shop_categories")
+          .insert(SHOP_CATS.map(name => ({ user_id: uid, name }))).select();
+        rows = (seeded || []).sort((a,b) => a.name.localeCompare(b.name));
+      }
+      setShopCats(rows);
+    }
     setLoading(false);
   }
 
+  // This user's categories (defaults seeded on first load); falls back to the
+  // built-in list until the fetch/seed completes.
+  const catNames = shopCats.length ? shopCats.map(c => c.name) : SHOP_CATS;
+
   // ── Product CRUD ──
-  function openAddProd() { setProdForm(BLANK_PROD); setEditProd(null); setShowProdForm(true); }
+  function openAddProd() { setProdForm({ ...BLANK_PROD, category: catNames[0] || SHOP_CATS[0] }); setEditProd(null); setShowProdForm(true); }
   function openEditProd(p) {
     const packed = hasPack(p);
     setProdForm({
@@ -365,6 +378,7 @@ export default function ShopApp({ session, onBack }) {
               <div>
                 <div style={{ display:"flex", gap:10, marginBottom:14 }}>
                   <input className="sh-inp" placeholder="Search / ស្វែងរក..." value={search} onChange={e => setSearch(e.target.value)} style={{ flex:1 }}/>
+                  <button className="sh-btn sh-ghost" onClick={() => setShowCatMgr(true)} style={{ flexShrink:0 }} title="Manage categories">⚙</button>
                   <button className="sh-btn sh-primary" onClick={openAddProd} style={{ flexShrink:0 }}>+ Add</button>
                 </div>
 
@@ -616,7 +630,7 @@ export default function ShopApp({ session, onBack }) {
               <div>
                 <label className="sh-lbl">Category / ប្រភេទ</label>
                 <select className="sh-inp" value={prodForm.category} onChange={e => setProdForm(f => ({...f, category:e.target.value}))}>
-                  {SHOP_CATS.map(c => <option key={c} value={c}>{c}</option>)}
+                  {(catNames.includes(prodForm.category) ? catNames : [prodForm.category, ...catNames]).map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               {/* Sold by box toggle */}
@@ -889,6 +903,111 @@ export default function ShopApp({ session, onBack }) {
           </div>
         </div>
       )}
+
+      {/* ══ CATEGORY MANAGER MODAL ══ */}
+      {showCatMgr && (
+        <ShopCategoryManager
+          uid={uid}
+          shopCats={shopCats}
+          setShopCats={setShopCats}
+          products={products}
+          setProducts={setProducts}
+          showToast={showToast}
+          onClose={() => setShowCatMgr(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Shop category manager (same rules as finance: seed defaults, rename keeps
+//    products in sync, delete blocked while a product uses the category) ──
+function ShopCategoryManager({ uid, shopCats, setShopCats, products, setProducts, showToast, onClose }) {
+  const [newName, setNewName]     = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName]   = useState("");
+  const [error, setError]         = useState("");
+  const [busy, setBusy]           = useState(false);
+
+  const names = shopCats.map(c => c.name);
+  const inUse = name => products.some(p => p.category === name);
+
+  async function handleAdd() {
+    const name = newName.trim();
+    if (!name) { setError("Enter a category name"); return; }
+    if (names.some(n => n.toLowerCase() === name.toLowerCase())) { setError("Category already exists"); return; }
+    setBusy(true); setError("");
+    const { data, error } = await supabase.from("shop_categories").insert({ user_id: uid, name }).select().single();
+    setBusy(false);
+    if (error) { setError("Failed to add category"); return; }
+    setShopCats(p => [...p, data].sort((a,b) => a.name.localeCompare(b.name)));
+    setNewName("");
+    showToast("Category added ✓");
+  }
+
+  async function handleRename(cat) {
+    const name = editName.trim();
+    if (!name) { setError("Enter a category name"); return; }
+    if (name === cat.name) { setEditingId(null); return; }
+    if (names.some(n => n.toLowerCase() === name.toLowerCase())) { setError("Category already exists"); return; }
+    setBusy(true); setError("");
+    const { error } = await supabase.from("shop_categories").update({ name }).eq("id", cat.id);
+    if (error) { setBusy(false); setError("Failed to rename category"); return; }
+    // Keep existing products pointing at the renamed category
+    const { error: pErr } = await supabase.from("shop_products").update({ category: name }).eq("user_id", uid).eq("category", cat.name);
+    setBusy(false);
+    if (pErr) { setError("Renamed, but failed to update its products"); return; }
+    setShopCats(p => p.map(c => c.id === cat.id ? { ...c, name } : c));
+    setProducts(p => p.map(pr => pr.category === cat.name ? { ...pr, category: name } : pr));
+    setEditingId(null);
+    showToast("Category renamed ✓");
+  }
+
+  async function handleDelete(cat) {
+    if (inUse(cat.name)) { setError(`"${cat.name}" is used by products and can't be deleted`); return; }
+    setBusy(true); setError("");
+    const { error } = await supabase.from("shop_categories").delete().eq("id", cat.id);
+    setBusy(false);
+    if (error) { setError("Failed to delete category"); return; }
+    setShopCats(p => p.filter(c => c.id !== cat.id));
+    showToast("Category deleted ✓");
+  }
+
+  return (
+    <div className="sh-overlay">
+      <div className="sh-modal">
+        <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:16, marginBottom:6 }}>Manage Categories</div>
+        <div style={{ fontSize:12, color:"#a7a9be", marginBottom:16 }}>ប្រភេទទំនិញ</div>
+        <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+          <input className="sh-inp" placeholder="New category name" value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAdd()} style={{ flex:1 }}/>
+          <button className="sh-btn sh-primary" style={{ flexShrink:0 }} onClick={handleAdd} disabled={busy}>+ Add</button>
+        </div>
+        {error && <div style={{ color:"#f25f4c", fontSize:12, textAlign:"center", marginBottom:10 }}>{error}</div>}
+        <div style={{ maxHeight:320, overflowY:"auto" }}>
+          {shopCats.map(cat => (
+            <div key={cat.id} className="sh-row">
+              {editingId === cat.id ? (
+                <>
+                  <input className="sh-inp" style={{ flex:1, minWidth:0 }} value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => e.key === "Enter" && handleRename(cat)} autoFocus/>
+                  <button className="sh-btn sh-ghost" style={{ padding:"6px 10px" }} onClick={() => handleRename(cat)} disabled={busy}>✓</button>
+                  <button className="sh-btn sh-ghost" style={{ padding:"6px 10px" }} onClick={() => { setEditingId(null); setError(""); }}>✕</button>
+                </>
+              ) : (
+                <>
+                  <div style={{ flex:1, fontSize:13, minWidth:0, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{cat.name}</div>
+                  {inUse(cat.name) && <span style={{ fontSize:10, color:"#ff8906", flexShrink:0 }}>in use</span>}
+                  <button className="sh-btn sh-ghost" style={{ padding:"6px 10px" }} onClick={() => { setEditingId(cat.id); setEditName(cat.name); setError(""); }}>✎</button>
+                  <button className="sh-danger" onClick={() => handleDelete(cat)} disabled={busy} style={{ opacity: inUse(cat.name) ? 0.4 : 1 }}>✕</button>
+                </>
+              )}
+            </div>
+          ))}
+          {shopCats.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:"14px 0", fontSize:12 }}>No categories yet</div>}
+        </div>
+        <div style={{ display:"flex", marginTop:20 }}>
+          <button className="sh-btn sh-ghost" style={{ flex:1 }} onClick={onClose}>Done</button>
+        </div>
+      </div>
     </div>
   );
 }

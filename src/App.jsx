@@ -1,8 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import ShopApp from "./ShopApp";
-
-const SHOP_ALLOWED = ["raksask90@gmail.com", "raksa.chou99@gmail.com"];
+import AdminApp from "./AdminApp";
 
 // Seeded into each user's account on first load; after that the DB is the source of truth
 const CATEGORIES = {
@@ -527,7 +526,11 @@ function CategoryManagerModal({ session, customCats, setCustomCats, transactions
 export default function App() {
   const [session, setSession] = useState(null);
   const [authView, setAuthView] = useState("loading");
-  const [appView, setAppView] = useState("finance"); // "finance" | "shop"
+  const [appView, setAppView] = useState(() => localStorage.getItem("rf_appView") || "finance"); // "finance" | "shop" | "admin"
+  const [profile, setProfile] = useState(null);      // access flags from the profiles table
+
+  // Remember the current view across refreshes (access is still re-checked on render).
+  useEffect(() => { localStorage.setItem("rf_appView", appView); }, [appView]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -545,6 +548,28 @@ export default function App() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // Load access flags whenever the signed-in user changes. A disabled user is signed out.
+  useEffect(() => {
+    let cancelled = false;
+    if (!session) { setProfile(null); return; }
+    (async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("user_id,username,email,role,can_finance,can_shop,disabled")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (data?.disabled) {
+        alert("Your access has been disabled. Please contact the administrator.");
+        supabase.auth.signOut();
+        return;
+      }
+      // Fall back to permissive defaults if the admin SQL hasn't been run yet.
+      setProfile(data || { role: "user", can_finance: true, can_shop: false, disabled: false });
+    })();
+    return () => { cancelled = true; };
+  }, [session]);
 
   if (authView === "loading") return (
     <div style={{minHeight:"100vh",background:"#0f0e17",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Mono','Courier New',monospace",color:"#a7a9be",fontSize:13}}>
@@ -564,21 +589,51 @@ export default function App() {
     </AuthShell>
   );
 
-  if (appView === "shop") {
-    return <ShopApp session={session} onBack={() => setAppView("finance")} />;
+  // Wait for access flags before routing (avoids a flash of the wrong view).
+  if (!profile) return (
+    <div style={{minHeight:"100vh",background:"#0f0e17",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Mono','Courier New',monospace",color:"#a7a9be",fontSize:13}}>
+      Loading...
+    </div>
+  );
+
+  const isAdmin = profile.role === "admin";
+  const canShop = !!profile.can_shop || isAdmin;
+  const canFinance = profile.can_finance !== false || isAdmin;
+
+  if (appView === "admin" && isAdmin) {
+    return <AdminApp session={session} profile={profile} onBack={() => setAppView("finance")} />;
   }
+  if (appView === "shop" && canShop) {
+    return <ShopApp session={session} canShop={canShop} onBack={() => setAppView("finance")} />;
+  }
+
+  // No finance access: offer the shop (if allowed) or a sign-out.
+  if (!canFinance) return (
+    <div style={{minHeight:"100vh",background:"#0f0e17",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'DM Mono','Courier New',monospace",textAlign:"center",padding:20,gap:14}}>
+      <div style={{fontSize:40}}>🔒</div>
+      <div style={{fontSize:15,color:"#fffffe"}}>No Finance access</div>
+      <div style={{fontSize:12,color:"#a7a9be"}}>Ask the administrator to grant you access.</div>
+      <div style={{display:"flex",gap:10,marginTop:6}}>
+        {canShop && <button onClick={()=>setAppView("shop")} style={{padding:"10px 18px",background:"#ff8906",color:"#0f0e17",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:600}}>🏪 Open Shop</button>}
+        <button onClick={()=>supabase.auth.signOut()} style={{padding:"10px 18px",background:"transparent",color:"#f25f4c",border:"1px solid #f25f4c",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Sign out</button>
+      </div>
+    </div>
+  );
 
   return (
     <Dashboard
       session={session}
       onLogout={() => supabase.auth.signOut()}
+      canShop={canShop}
+      isAdmin={isAdmin}
       onGoToShop={() => setAppView("shop")}
+      onGoToAdmin={() => setAppView("admin")}
     />
   );
 }
 
 // ── Dashboard ──
-function Dashboard({ session, onLogout, onGoToShop }) {
+function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmin }) {
   const [transactions, setTransactions]         = useState([]);
   const [selectedMonth, setSelectedMonth]       = useState(now.getMonth());
   const [selectedYear, setSelectedYear]         = useState(now.getFullYear());
@@ -845,10 +900,13 @@ function Dashboard({ session, onLogout, onGoToShop }) {
               {showUserMenu && <>
                 <div style={{position:"fixed",inset:0,zIndex:40}} onClick={()=>setShowUserMenu(false)}/>
                 <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:41,background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:10,minWidth:170,overflow:"hidden",boxShadow:"0 8px 24px rgba(0,0,0,.4)"}}>
-                  {SHOP_ALLOWED.includes(session?.user?.email) && (
+                  {isAdmin && (
+                    <button onClick={()=>{setShowUserMenu(false);onGoToAdmin();}} style={menuItem}>👥 Users</button>
+                  )}
+                  {canShop && (
                     <button onClick={()=>{setShowUserMenu(false);onGoToShop();}} style={menuItem}>🏪 Shop Manager</button>
                   )}
-                  {SHOP_ALLOWED.includes(session?.user?.email) && <div style={{height:1,background:"#2e2d3d"}}/>}
+                  {(isAdmin || canShop) && <div style={{height:1,background:"#2e2d3d"}}/>}
                   <button onClick={()=>{setShowUserMenu(false);setShowProfile(true);}} style={menuItem}>👤 Profile</button>
                   <button onClick={()=>{setShowUserMenu(false);setShowCatManager(true);}} style={menuItem}>⚙ Categories</button>
                   <div style={{height:1,background:"#2e2d3d"}}/>
