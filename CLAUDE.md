@@ -3,14 +3,19 @@
 ## What this is
 A personal finance + shop management web app built with React 18 + Supabase. Deployed to GitHub Pages at https://craksa.github.io/raksa-finance.
 
-## Users
-| Username | Email | Access |
-|----------|-------|--------|
-| raksa | raksask90@gmail.com | Finance + Shop |
-| sreydy | raksa.chou99@gmail.com | Finance + Shop |
-| dara | dara@gmail.com | Finance only |
+## Users & access control
+Access is **data-driven via the `profiles` table** (NOT a hardcoded list anymore — the old `SHOP_ALLOWED` array was removed). Each profile has flags: `role` (`'user'`|`'admin'`), `can_finance`, `can_shop`, `disabled`.
 
-Username login is supported via `resolveEmail()` in App.jsx — maps username → email, then calls Supabase auth. Shop access is restricted to `SHOP_ALLOWED` emails (raksa + sreydy).
+| Username | Email | role | Access |
+|----------|-------|------|--------|
+| raksa | raksask90@gmail.com | admin | Finance + Shop + Users |
+| sreydy | raksa.chou99@gmail.com | user | Finance + Shop |
+| dara | dara@gmail.com | user | Finance only |
+
+- Username login via `resolveEmail()` in App.jsx — maps username → email, then calls Supabase auth.
+- New users self-sign-up and land with `can_finance=true`, `can_shop=false`. The admin grants Shop/Admin from the Users dashboard.
+- On load, App.jsx fetches the signed-in user's profile flags; a `disabled` user is signed out immediately. Routing gates on `can_finance` / `can_shop` / `role`.
+- `is_admin()` (SQL, security-definer) backs admin-only RLS. Admin can read/manage every user's rows on all per-user tables (for the Users dashboard export/delete).
 
 ## Tech stack
 - React 18 (Create React App, single-page)
@@ -32,14 +37,18 @@ Username login is supported via `resolveEmail()` in App.jsx — maps username �
 ## File structure
 ```
 src/
-  App.jsx          — Finance app (1150+ lines): auth, dashboard, transactions, categories
-  ShopApp.jsx      — Shop manager: products, stock, sales, reports
+  App.jsx          — Finance app: auth, dashboard, transactions, categories; top-level routing + profile/access gating
+  ShopApp.jsx      — Shop manager: products (box/pack pricing), stock, sales, reports, categories
+  AdminApp.jsx     — User management dashboard (admin only)
   supabaseClient.js — Supabase client init (reads from .env)
   index.js         — React entry point
 supabase/
-  profiles.sql     — profiles table + RLS (already applied)
-  categories.sql   — categories table + RLS (already applied)
-  shop.sql         — shop_products, shop_sales, shop_restock tables + RLS (already applied)
+  profiles.sql        — profiles table + RLS + username login RPC (applied)
+  categories.sql      — finance categories table + RLS (applied)
+  shop.sql            — shop_products/sales/restock + box/pack pricing columns (applied)
+  shop_categories.sql — per-user shop categories + RLS (applied)
+  admin.sql           — profiles access flags, is_admin(), admin RLS (applied)
+  functions/admin-delete-user/index.ts — Edge Function: admin-verified delete + CSV email (NOT deployed yet)
 public/
   index.html
 ```
@@ -49,23 +58,30 @@ public/
 |-------|---------|
 | `transactions` | Finance income/expense records |
 | `categories` | Per-user custom income/expense categories |
-| `profiles` | User profile data |
-| `shop_products` | Product catalog (name_en, name_kh, cost_price, sell_price, stock, etc.) |
-| `shop_sales` | Sale records (auto-decrements stock on insert) |
-| `shop_restock` | Restock records (auto-increments stock on insert) |
+| `profiles` | User profile + access flags (`username`, `email`, `role`, `can_finance`, `can_shop`, `disabled`) |
+| `shop_products` | Product catalog; per-unit `cost_price`/`sell_price`/`stock` + optional pack (`pack_size`, `pack_unit`, `pack_cost_price`, `pack_sell_price`) |
+| `shop_sales` | Sale records; `qty`/`sell_price`/`cost_price` are per `sale_unit`, `base_qty` = base units sold |
+| `shop_restock` | Restock records |
+| `shop_categories` | Per-user shop product categories |
 
-All tables have Row Level Security — `user_id = auth.uid()`.
+All per-user tables have RLS (`user_id = auth.uid()`), plus an `is_admin()` policy so the admin can read/manage every user's rows.
 
 ## App navigation
-- `App()` has `appView` state: `"finance"` (default) or `"shop"`
-- User menu (top-right dropdown) shows **🏪 Shop Manager** for allowed users
-- ShopApp renders standalone; "← Finance" button returns to appView="finance"
+- `App()` has `appView` state: `"finance"` | `"shop"` | `"admin"`. Persisted in `localStorage` (`rf_appView`) so a refresh stays on the same view; access is re-checked on render.
+- User menu (top-right dropdown): **👥 Users** for admins, **🏪 Shop Manager** for `can_shop` users.
+- ShopApp / AdminApp render standalone; "← Finance" returns to appView="finance".
+- Modals do NOT close on outside click (only via Save/Cancel) — intentional, to avoid losing form input.
 
 ## ShopApp tabs
-1. **Products / ទំនិញ** — Add/edit/delete products; low-stock items highlighted with red left border
+1. **Products / ទំនិញ** — Add/edit/delete products; low-stock = red left border. Products can optionally be sold by the box/pack (enter the box price; per-unit auto-derived; stock stored in base units, shown as "boxes + loose"). **⚙** button manages categories.
 2. **Stock / ស្តុក** — Stock levels overview; low-stock alert panel at top
-3. **Sales / លក់** — Record sales (deducts stock), today's revenue summary, delete sale (restores stock)
+3. **Sales / លក់** — Record sales (box/unit toggle for packs; deducts stock), today's revenue, delete sale (restores stock)
 4. **Reports / របាយការណ៍** — Monthly revenue/cost/profit, top products, low-stock reminder
+
+## User management (AdminApp, admin only)
+- Lists all profiles; per user toggle Finance / Shop / Admin / Disabled (self-protected against lockout).
+- **Delete**: requires admin to re-enter their password → exports the user's data to CSV (downloaded locally) → calls the `admin-delete-user` Edge Function (emails CSV + removes auth account). Until that function is deployed, it falls back to wiping data + disabling the account.
+- Categories (both finance & shop): seeded with defaults on first load; rename keeps records in sync; delete blocked while in use.
 
 ## Shop business context
 Owner: Raksa, Phnom Penh, Cambodia. Small home convenience store (អាជីវកម្មលក់ចាប់ហួយ) selling cleaning supplies, personal care products, food/snacks, drinks, household items.
