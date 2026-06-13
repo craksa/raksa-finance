@@ -1,5 +1,8 @@
 ﻿import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
+import ShopApp from "./ShopApp";
+
+const SHOP_ALLOWED = ["raksask90@gmail.com", "raksa.chou99@gmail.com"];
 
 // Seeded into each user's account on first load; after that the DB is the source of truth
 const CATEGORIES = {
@@ -524,6 +527,7 @@ function CategoryManagerModal({ session, customCats, setCustomCats, transactions
 export default function App() {
   const [session, setSession] = useState(null);
   const [authView, setAuthView] = useState("loading");
+  const [appView, setAppView] = useState("finance"); // "finance" | "shop"
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -560,16 +564,21 @@ export default function App() {
     </AuthShell>
   );
 
+  if (appView === "shop") {
+    return <ShopApp session={session} onBack={() => setAppView("finance")} />;
+  }
+
   return (
     <Dashboard
       session={session}
       onLogout={() => supabase.auth.signOut()}
+      onGoToShop={() => setAppView("shop")}
     />
   );
 }
 
 // ── Dashboard ──
-function Dashboard({ session, onLogout }) {
+function Dashboard({ session, onLogout, onGoToShop }) {
   const [transactions, setTransactions]         = useState([]);
   const [selectedMonth, setSelectedMonth]       = useState(now.getMonth());
   const [selectedYear, setSelectedYear]         = useState(now.getFullYear());
@@ -836,6 +845,10 @@ function Dashboard({ session, onLogout }) {
               {showUserMenu && <>
                 <div style={{position:"fixed",inset:0,zIndex:40}} onClick={()=>setShowUserMenu(false)}/>
                 <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:41,background:"#1a1929",border:"1px solid #2e2d3d",borderRadius:10,minWidth:170,overflow:"hidden",boxShadow:"0 8px 24px rgba(0,0,0,.4)"}}>
+                  {SHOP_ALLOWED.includes(session?.user?.email) && (
+                    <button onClick={()=>{setShowUserMenu(false);onGoToShop();}} style={menuItem}>🏪 Shop Manager</button>
+                  )}
+                  {SHOP_ALLOWED.includes(session?.user?.email) && <div style={{height:1,background:"#2e2d3d"}}/>}
                   <button onClick={()=>{setShowUserMenu(false);setShowProfile(true);}} style={menuItem}>👤 Profile</button>
                   <button onClick={()=>{setShowUserMenu(false);setShowCatManager(true);}} style={menuItem}>⚙ Categories</button>
                   <div style={{height:1,background:"#2e2d3d"}}/>
