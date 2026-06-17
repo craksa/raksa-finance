@@ -598,7 +598,9 @@ export default function ShopApp({ session, onBack, canShop = true }) {
         .sh-danger{background:transparent;color:#f25f4c;border:1px solid #f25f4c22;font-size:11px;padding:5px 10px;border-radius:6px;cursor:pointer;font-family:inherit;transition:all .15s}.sh-danger:hover{background:#f25f4c22}
         .sh-inp{background:#12111f;border:1px solid #2e2d3d;border-radius:6px;color:#fffffe;font-family:inherit;font-size:13px;padding:10px 14px;width:100%;outline:none;transition:border .15s}
         .sh-inp:focus{border-color:#ff8906} select.sh-inp option{background:#1a1929}
-        input[type=date].sh-inp{text-align:left;-webkit-appearance:none;appearance:none}
+        input[type=date].sh-inp,input[type=time].sh-inp{text-align:left;-webkit-appearance:none;appearance:none;min-width:0;max-width:100%}
+        input[type=date].sh-inp::-webkit-date-and-time-value,input[type=time].sh-inp::-webkit-date-and-time-value{text-align:left;margin:0}
+        input[type=date].sh-inp::-webkit-datetime-edit,input[type=time].sh-inp::-webkit-datetime-edit{text-align:left;padding:0}
         .sh-card{background:#1a1929;border:1px solid #2e2d3d;border-radius:12px;padding:14px 16px;margin-bottom:10px}
         .sh-tab{cursor:pointer;padding:8px 14px;border-radius:6px;font-size:12px;color:#a7a9be;transition:all .15s;border:none;background:transparent;font-family:inherit;white-space:nowrap}
         .sh-tab.active{background:#ff8906;color:#0f0e17;font-weight:500}
