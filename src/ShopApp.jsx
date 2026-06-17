@@ -14,10 +14,43 @@ const SHOP_CATS = [
 ];
 const UNITS = ["pcs","can","bottle","bag","pack","sachet","kg","g","roll","tube","bar"];
 const PACK_UNITS = ["box","pack","carton","case","crate","dozen","tray"];
+const EXPENSE_CATS = [
+  "Rent / ជួលផ្ទះ",
+  "Electricity / អគ្គិសនី",
+  "Water / ទឹក",
+  "Salary / ប្រាក់ខែ",
+  "Transport / ដឹកជញ្ជូន",
+  "Supplies / សម្ភារៈ",
+  "Internet/Phone / អ៊ីនធឺណិត",
+  "Other / ផ្សេងៗ",
+];
 
 function fmtUSD(n) { return "$" + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
 function fmtKHR(n) { return "៛" + Math.round(n * KHR_RATE).toLocaleString(); }
 function todayStr() { return new Date().toISOString().split("T")[0]; }
+const pad2 = n => String(n).padStart(2, "0");
+function nowTime() { const d = new Date(); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+// Combine a yyyy-mm-dd date and an HH:MM time (local) into an ISO timestamp.
+function toTimestamp(date, time) {
+  const t = /^\d{2}:\d{2}$/.test(time || "") ? time : "00:00";
+  return new Date(`${date}T${t}`).toISOString();
+}
+// Local HH:MM from a row's created_at (falls back to now for old rows).
+function timeOf(row) {
+  const c = row && row.created_at ? new Date(row.created_at) : new Date();
+  return `${pad2(c.getHours())}:${pad2(c.getMinutes())}`;
+}
+// Local yyyy-mm-dd from a row's created_at (for date inputs).
+function dateOf(row) {
+  const c = row && row.created_at ? new Date(row.created_at) : new Date();
+  return `${c.getFullYear()}-${pad2(c.getMonth()+1)}-${pad2(c.getDate())}`;
+}
+// dd-Mon-yyyy hh:mm from a row's created_at (for display).
+function fmtDT(row) {
+  if (!row || !row.created_at) return "";
+  const c = new Date(row.created_at);
+  return `${pad2(c.getDate())}-${MONTHS_FULL[c.getMonth()].slice(0,3)}-${c.getFullYear()} ${pad2(c.getHours())}:${pad2(c.getMinutes())}`;
+}
 
 // ── Pack helpers ── (stock is always stored in base units; we display boxes + loose)
 function hasPack(p) { return Number(p.pack_size) > 1; }
@@ -31,15 +64,19 @@ function fmtStock(p) {
   return `${loose} ${p.unit}`;
 }
 
-const BLANK_PROD = { name_en:"", name_kh:"", category:SHOP_CATS[0], cost_price:"", sell_price:"", stock:"0", low_stock:"5", unit:"pcs", has_pack:false, pack_size:"24", pack_unit:"box", pack_cost_price:"", pack_sell_price:"" };
-const BLANK_SALE = { product_id:"", qty:"1", mode:"unit", date:todayStr(), note:"" };
+const BLANK_PROD = { name_en:"", name_kh:"", category:SHOP_CATS[0], cost_price:"", sell_price:"", stock:"0", low_stock:"5", unit:"pcs", has_pack:false, pack_size:"24", pack_unit:"box", pack_cost_price:"", pack_sell_price:"", date:todayStr(), time:nowTime() };
+const BLANK_SALE = { product_id:"", qty:"1", mode:"unit", date:todayStr(), time:nowTime(), note:"" };
 const BLANK_RESTOCK = { qty:"", mode:"unit", cost_per_unit:"", date:todayStr(), note:"" };
+const BLANK_EXCH = { kind:"item", product_id:"", qty:"1", mode:"unit", cash_value:"", commission:"", date:todayStr(), time:nowTime(), note:"" };
+const BLANK_EXPENSE = { category:EXPENSE_CATS[0], amount:"", date:todayStr(), time:nowTime(), note:"" };
 
 export default function ShopApp({ session, onBack, canShop = true }) {
   const [tab, setTab]             = useState("products");
   const [cur, setCur]             = useState("USD");
   const [products, setProducts]   = useState([]);
   const [sales, setSales]         = useState([]);
+  const [exchanges, setExchanges] = useState([]);
+  const [expenses, setExpenses]   = useState([]);
   const [shopCats, setShopCats]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [toast, setToast]         = useState(null);
@@ -60,9 +97,32 @@ export default function ShopApp({ session, onBack, canShop = true }) {
   const [restockFor, setRestockFor]           = useState(null);
   const [restockForm, setRestockForm]         = useState(BLANK_RESTOCK);
 
-  // Report month
+  // Gift / exchange form
+  const [showExchForm, setShowExchForm] = useState(false);
+  const [exchForm, setExchForm]         = useState(BLANK_EXCH);
+  const [exchFilter, setExchFilter]     = useState("today"); // "today" | "all"
+
+  // Expense form
+  const [showExpForm, setShowExpForm]   = useState(false);
+  const [expForm, setExpForm]           = useState(BLANK_EXPENSE);
+
+  // Sales list filter: "today" | "month" | "range"
+  const [salesMode, setSalesMode] = useState("today");
+  const [salesFrom, setSalesFrom] = useState(todayStr());
+  const [salesTo, setSalesTo]     = useState(todayStr());
+
+  // Expense list filter: "today" | "month" | "range"
+  const [expMode, setExpMode] = useState("month");
+  const [expFrom, setExpFrom] = useState(todayStr());
+  const [expTo, setExpTo]     = useState(todayStr());
+
+  // Report period: "day" | "month" | "range"
+  const [rptMode, setRptMode]   = useState("day");
   const [rptMonth, setRptMonth] = useState(new Date().getMonth());
   const [rptYear, setRptYear]   = useState(new Date().getFullYear());
+  const [rptDay, setRptDay]     = useState(todayStr());
+  const [rptFrom, setRptFrom]   = useState(todayStr());
+  const [rptTo, setRptTo]       = useState(todayStr());
 
   const fmt = n => cur === "USD" ? fmtUSD(n) : fmtKHR(n);
   const uid = session.user.id;
@@ -88,13 +148,17 @@ export default function ShopApp({ session, onBack, canShop = true }) {
 
   async function loadAll() {
     setLoading(true);
-    const [pRes, sRes, cRes] = await Promise.all([
+    const [pRes, sRes, cRes, eRes, xRes] = await Promise.all([
       supabase.from("shop_products").select("*").eq("user_id", uid).order("name_en"),
       supabase.from("shop_sales").select("*").eq("user_id", uid).order("date", { ascending:false }).order("created_at", { ascending:false }),
       supabase.from("shop_categories").select("*").eq("user_id", uid).order("name"),
+      supabase.from("shop_exchanges").select("*").eq("user_id", uid).order("date", { ascending:false }).order("created_at", { ascending:false }),
+      supabase.from("shop_expenses").select("*").eq("user_id", uid).order("date", { ascending:false }).order("created_at", { ascending:false }),
     ]);
     if (!pRes.error) setProducts(pRes.data || []);
     if (!sRes.error) setSales(sRes.data || []);
+    if (!eRes.error) setExchanges(eRes.data || []);
+    if (!xRes.error) setExpenses(xRes.data || []);
     if (!cRes.error) {
       let rows = cRes.data || [];
       // First load for this user: seed the default categories.
@@ -113,7 +177,7 @@ export default function ShopApp({ session, onBack, canShop = true }) {
   const catNames = shopCats.length ? shopCats.map(c => c.name) : SHOP_CATS;
 
   // ── Product CRUD ──
-  function openAddProd() { setProdForm({ ...BLANK_PROD, category: catNames[0] || SHOP_CATS[0] }); setEditProd(null); setShowProdForm(true); }
+  function openAddProd() { setProdForm({ ...BLANK_PROD, category: catNames[0] || SHOP_CATS[0], date:todayStr(), time:nowTime() }); setEditProd(null); setShowProdForm(true); }
   function openEditProd(p) {
     const packed = hasPack(p);
     setProdForm({
@@ -125,6 +189,7 @@ export default function ShopApp({ session, onBack, canShop = true }) {
       pack_unit:p.pack_unit || "box",
       pack_cost_price:packed ? String(p.pack_cost_price) : "",
       pack_sell_price:packed ? String(p.pack_sell_price) : "",
+      date:dateOf(p), time:timeOf(p),
     });
     setEditProd(p); setShowProdForm(true);
   }
@@ -157,6 +222,7 @@ export default function ShopApp({ session, onBack, canShop = true }) {
       pack_unit:       prodForm.pack_unit || "box",
       pack_cost_price: packed ? boxCost : 0,
       pack_sell_price: packed ? boxSell : 0,
+      created_at: toTimestamp(prodForm.date, prodForm.time),
       updated_at: new Date().toISOString(),
     };
     if (editProd) {
@@ -205,6 +271,7 @@ export default function ShopApp({ session, onBack, canShop = true }) {
       sell_price:   unitSell,
       cost_price:   unitCost,
       date:         saleForm.date,
+      created_at:   toTimestamp(saleForm.date, saleForm.time),
       note:         saleForm.note,
     }).select().single();
     if (error) { showToast("Failed to record sale", "#f25f4c"); return; }
@@ -230,6 +297,122 @@ export default function ShopApp({ session, onBack, canShop = true }) {
       setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, stock:newStock } : p));
     }
     setSales(prev => prev.filter(x => x.id !== s.id));
+    showToast("Deleted ✓");
+  }
+
+  // ── Gifts / Exchange ──
+  function openExch() { setExchForm({ ...BLANK_EXCH, date:todayStr(), time:nowTime() }); setShowExchForm(true); }
+
+  async function recordExchange() {
+    const created_at = toTimestamp(exchForm.date, exchForm.time);
+    if (exchForm.kind === "cash") {
+      const entered = parseFloat(exchForm.cash_value) || 0;
+      if (entered <= 0) { showToast("Enter an exchange amount", "#f25f4c"); return; }
+      const usd = cur === "KHR" ? entered / KHR_RATE : entered;   // store value in USD
+      const { data: ed, error } = await supabase.from("shop_exchanges").insert({
+        user_id:      uid,
+        kind:         "cash",
+        product_name: "",
+        qty:          0,
+        sale_unit:    "",
+        base_qty:     0,
+        cost_price:   0,
+        cash_value:   usd,
+        date:         exchForm.date,
+        created_at,
+        note:         exchForm.note,
+      }).select().single();
+      if (error) { showToast("Failed to record exchange", "#f25f4c"); return; }
+      setExchanges(prev => [ed, ...prev]);
+      setExchForm(BLANK_EXCH);
+      setShowExchForm(false);
+      showToast(`Exchange recorded ✓ — ${fmt(usd)}`);
+      return;
+    }
+
+    // Item gift — deducts stock
+    const prod = products.find(p => p.id === exchForm.product_id);
+    if (!prod) { showToast("Select a product", "#f25f4c"); return; }
+    const qty = parseInt(exchForm.qty) || 0;
+    if (qty < 1) { showToast("Enter a quantity", "#f25f4c"); return; }
+    const isBox    = hasPack(prod) && exchForm.mode === "box";
+    const saleUnit = isBox ? (prod.pack_unit || "box") : prod.unit;
+    const baseQty  = isBox ? qty * prod.pack_size : qty;
+    const unitCost = isBox ? prod.pack_cost_price : prod.cost_price;
+    if (prod.stock < baseQty) { showToast(`Only ${fmtStock(prod)} in stock!`, "#f25f4c"); return; }
+    const commEntered = parseFloat(exchForm.commission) || 0;
+    const commission  = cur === "KHR" ? commEntered / KHR_RATE : commEntered;   // store in USD
+
+    const { data: ed, error } = await supabase.from("shop_exchanges").insert({
+      user_id:      uid,
+      kind:         "item",
+      product_id:   prod.id,
+      product_name: prod.name_en + (prod.name_kh ? ` / ${prod.name_kh}` : ""),
+      qty,
+      sale_unit:    saleUnit,
+      base_qty:     baseQty,
+      cost_price:   unitCost,
+      cash_value:   0,
+      commission,
+      date:         exchForm.date,
+      created_at,
+      note:         exchForm.note,
+    }).select().single();
+    if (error) { showToast("Failed to record exchange", "#f25f4c"); return; }
+
+    const newStock = prod.stock - baseQty;
+    await supabase.from("shop_products").update({ stock:newStock, updated_at:new Date().toISOString() }).eq("id", prod.id);
+    setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, stock:newStock } : p));
+    setExchanges(prev => [ed, ...prev]);
+    setExchForm(BLANK_EXCH);
+    setShowExchForm(false);
+    showToast(`Exchange recorded ✓ — ${qty} ${saleUnit} × ${prod.name_en}`);
+  }
+
+  async function deleteExchange(e) {
+    if (!window.confirm("Delete this exchange?")) return;
+    const { error } = await supabase.from("shop_exchanges").delete().eq("id", e.id);
+    if (error) { showToast("Failed", "#f25f4c"); return; }
+    // Restore stock for item gifts
+    if (e.kind === "item") {
+      const prod = products.find(p => p.id === e.product_id);
+      if (prod) {
+        const newStock = prod.stock + (e.base_qty || e.qty);
+        await supabase.from("shop_products").update({ stock:newStock }).eq("id", prod.id);
+        setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, stock:newStock } : p));
+      }
+    }
+    setExchanges(prev => prev.filter(x => x.id !== e.id));
+    showToast("Deleted ✓");
+  }
+
+  // ── Expenses ──
+  function openExp() { setExpForm({ ...BLANK_EXPENSE, date:todayStr(), time:nowTime() }); setShowExpForm(true); }
+
+  async function recordExpense() {
+    const entered = parseFloat(expForm.amount) || 0;
+    if (entered <= 0) { showToast("Enter an amount", "#f25f4c"); return; }
+    const usd = cur === "KHR" ? entered / KHR_RATE : entered;   // store in USD
+    const { data: xd, error } = await supabase.from("shop_expenses").insert({
+      user_id:   uid,
+      category:  expForm.category,
+      amount:    usd,
+      date:      expForm.date,
+      created_at: toTimestamp(expForm.date, expForm.time),
+      note:      expForm.note,
+    }).select().single();
+    if (error) { showToast("Failed to record expense", "#f25f4c"); return; }
+    setExpenses(prev => [xd, ...prev]);
+    setExpForm(BLANK_EXPENSE);
+    setShowExpForm(false);
+    showToast(`Expense recorded ✓ — ${fmt(usd)}`);
+  }
+
+  async function deleteExpense(x) {
+    if (!window.confirm("Delete this expense?")) return;
+    const { error } = await supabase.from("shop_expenses").delete().eq("id", x.id);
+    if (error) { showToast("Failed", "#f25f4c"); return; }
+    setExpenses(prev => prev.filter(e => e.id !== x.id));
     showToast("Deleted ✓");
   }
 
@@ -275,14 +458,89 @@ export default function ShopApp({ session, onBack, canShop = true }) {
     p.category.toLowerCase().includes(search.toLowerCase())
   );
 
-  const rptSales   = sales.filter(s => { const d = new Date(s.date); return d.getMonth() === rptMonth && d.getFullYear() === rptYear; });
+  // Report period — date columns are "yyyy-mm-dd" strings, so string compare works for ranges.
+  const inPeriod = (row) => {
+    if (rptMode === "day")   return row.date === rptDay;
+    if (rptMode === "range") return row.date >= rptFrom && row.date <= rptTo;
+    const d = new Date(row.date); return d.getMonth() === rptMonth && d.getFullYear() === rptYear;
+  };
+  // Cost (loss) of an exchange: item = unit cost × qty; cash = the cash value.
+  const giftCost   = (e) => e.kind === "cash" ? Number(e.cash_value) : e.cost_price * e.qty;
+  // Commission earned (item promos only) — counts as profit.
+  const commOf     = (e) => Number(e.commission) || 0;
+
+  const rptSales   = sales.filter(inPeriod);
+  const rptExch    = exchanges.filter(inPeriod);
+  const rptExpRows = expenses.filter(inPeriod);
   const rptRevenue = rptSales.reduce((a,s) => a + s.sell_price * s.qty, 0);
   const rptCost    = rptSales.reduce((a,s) => a + s.cost_price * s.qty, 0);
-  const rptProfit  = rptRevenue - rptCost;
+  const rptGift    = rptExch.reduce((a,e) => a + giftCost(e), 0);
+  const rptComm    = rptExch.reduce((a,e) => a + commOf(e), 0);
+  const rptProfit  = rptRevenue - rptCost - rptGift + rptComm;            // gross profit (before operating expenses)
+  const rptExpense = rptExpRows.reduce((a,x) => a + Number(x.amount), 0); // operating expenses
+  const rptNet     = rptProfit - rptExpense;                             // net profit after expenses
+  // Gross margin ratio = how much profit each $1 of sales generates.
+  const rptMargin  = rptRevenue > 0 ? rptProfit / rptRevenue : 0;
+  // Break-even: sales revenue needed to cover the operating expenses at this margin.
+  const rptBreakEven = rptMargin > 0 ? rptExpense / rptMargin : null;
+  const rptLabel   = rptMode === "day"   ? rptDay
+                   : rptMode === "range" ? `${rptFrom} → ${rptTo}`
+                   :                       `${MONTHS_FULL[rptMonth]} ${rptYear}`;
 
-  const todaySales   = sales.filter(s => s.date === todayStr());
-  const todayRevenue = todaySales.reduce((a,s) => a + s.sell_price * s.qty, 0);
-  const todayProfit  = todaySales.reduce((a,s) => a + (s.sell_price - s.cost_price) * s.qty, 0);
+  const nowD = new Date();
+  const inMonth = (row) => { const d = new Date(row.date); return d.getMonth() === nowD.getMonth() && d.getFullYear() === nowD.getFullYear(); };
+  // Filter rows by a tab's Today / This month / Range selection.
+  const byPeriod = (rows, mode, from, to) => rows.filter(r =>
+    mode === "today" ? r.date === todayStr()
+    : mode === "range" ? (from && to && r.date >= from && r.date <= to)
+    : inMonth(r));
+  const periodLabel = (mode, from, to) =>
+    mode === "today" ? "Today / ថ្ងៃនេះ"
+    : mode === "range" ? (from && to ? `${from} → ${to}` : "Pick dates")
+    : `This month / ខែ${MONTHS_FULL[nowD.getMonth()]}`;
+  // Today / This month / Range segmented filter (shared by Sales & Expense tabs).
+  const renderPeriodFilter = (mode, setMode, from, setFrom, to, setTo) => (
+    <>
+      <div style={{ display:"flex", gap:8, marginBottom: mode === "range" ? 10 : 14 }}>
+        {[
+          { id:"today", label:"Today / ថ្ងៃនេះ" },
+          { id:"month", label:"Month / ខែនេះ" },
+          { id:"range", label:"Range / ចន្លោះ" },
+        ].map(o => (
+          <button key={o.id} className={`sh-btn ${mode === o.id ? "sh-primary" : "sh-ghost"}`}
+            style={{ flex:1, fontSize:11, padding:"8px 4px" }}
+            onClick={() => setMode(o.id)}>{o.label}</button>
+        ))}
+      </div>
+      {mode === "range" && (
+        <div style={{ display:"flex", gap:8, marginBottom:14, alignItems:"center" }}>
+          <input className="sh-inp" type="date" value={from} max={to || todayStr()} onChange={e => setFrom(e.target.value)} style={{ flex:1 }}/>
+          <span style={{ color:"#a7a9be", fontSize:12 }}>→</span>
+          <input className="sh-inp" type="date" value={to} min={from} max={todayStr()} onChange={e => setTo(e.target.value)} style={{ flex:1 }}/>
+        </div>
+      )}
+    </>
+  );
+
+  const todayExch     = exchanges.filter(e => e.date === todayStr());
+  const todayGiftCost = todayExch.reduce((a,e) => a + giftCost(e), 0);
+  const todayComm     = todayExch.reduce((a,e) => a + commOf(e), 0);
+
+  const sortByDateTime = (a,b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) || (new Date(b.created_at||0) - new Date(a.created_at||0));
+
+  // Sales tab — filtered view + totals
+  const salesInView    = byPeriod(sales, salesMode, salesFrom, salesTo);
+  const salesViewRev    = salesInView.reduce((a,s) => a + s.sell_price * s.qty, 0);
+  const salesViewProfit = salesInView.reduce((a,s) => a + (s.sell_price - s.cost_price) * s.qty, 0);
+  const visibleSales    = salesInView.slice().sort(sortByDateTime);
+
+  // Expense tab — filtered view + total
+  const expInView    = byPeriod(expenses, expMode, expFrom, expTo);
+  const expViewTotal = expInView.reduce((a,x) => a + Number(x.amount), 0);
+  const visibleExp   = expInView.slice().sort(sortByDateTime);
+
+  // Gifts tab list filter
+  const visibleExch  = (exchFilter === "today" ? todayExch : exchanges).slice().sort(sortByDateTime);
 
   // Top products for report
   const topProds = (() => {
@@ -301,6 +559,8 @@ export default function ShopApp({ session, onBack, canShop = true }) {
     { id:"products", label:"Products / ទំនិញ" },
     { id:"stock",    label:"Stock / ស្តុក" },
     { id:"sales",    label:"Sales / លក់" },
+    { id:"gifts",    label:"Exchange / រង្វាន់" },
+    { id:"expense",  label:"Expense / ចំណាយ" },
     { id:"reports",  label:"Reports / របាយការណ៍" },
   ];
 
@@ -394,9 +654,10 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontWeight:600, fontSize:14, marginBottom:2 }}>{p.name_en}</div>
                         {p.name_kh && <div style={{ fontSize:12, color:"#a7a9be", marginBottom:4 }}>{p.name_kh}</div>}
-                        <div style={{ fontSize:11, color:"#a7a9be", marginBottom:8 }}>
+                        <div style={{ fontSize:11, color:"#a7a9be", marginBottom:4 }}>
                           {p.category}{hasPack(p) && <span style={{ color:"#ff8906" }}> · 1 {p.pack_unit||"box"} = {p.pack_size} {p.unit}</span>}
                         </div>
+                        {p.created_at && <div style={{ fontSize:10, color:"#a7a9be", marginBottom:8 }}>🕒 {fmtDT(p)}</div>}
                         {hasPack(p) ? (
                           <div style={{ display:"flex", flexDirection:"column", gap:3, fontSize:12 }}>
                             <span>Per {p.pack_unit||"box"}: <b style={{ color:"#2cb67d" }}>{fmt(p.pack_sell_price)}</b> <span style={{ color:"#a7a9be" }}>(cost {fmt(p.pack_cost_price)})</span></span>
@@ -490,26 +751,30 @@ export default function ShopApp({ session, onBack, canShop = true }) {
             {/* ══════════ SALES ══════════ */}
             {tab === "sales" && (
               <div>
-                {/* Today summary */}
+                {/* Period summary */}
                 <div className="sh-card" style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
                   <div>
-                    <div style={{ fontSize:11, color:"#a7a9be", marginBottom:4 }}>Today / ថ្ងៃនេះ</div>
-                    <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:22, color:"#2cb67d" }}>{fmt(todayRevenue)}</div>
-                    <div style={{ fontSize:11, color:"#ff8906", marginTop:2 }}>Profit: {fmt(todayProfit)} · {todaySales.length} sales</div>
+                    <div style={{ fontSize:11, color:"#a7a9be", marginBottom:4 }}>{periodLabel(salesMode, salesFrom, salesTo)}</div>
+                    <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:22, color:"#2cb67d" }}>{fmt(salesViewRev)}</div>
+                    <div style={{ fontSize:11, color:"#ff8906", marginTop:2 }}>Profit: {fmt(salesViewProfit)} · {salesInView.length} sales</div>
                   </div>
-                  <button className="sh-btn sh-primary" onClick={() => { setSaleForm({ ...BLANK_SALE, date:todayStr() }); setShowSaleForm(true); }}>
+                  <button className="sh-btn sh-primary" onClick={() => { setSaleForm({ ...BLANK_SALE, date:todayStr(), time:nowTime() }); setShowSaleForm(true); }}>
                     + Record Sale
                   </button>
                 </div>
 
+                {/* Filter: Today / This month / Range */}
+                {renderPeriodFilter(salesMode, setSalesMode, salesFrom, setSalesFrom, salesTo, setSalesTo)}
+
                 {sales.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>No sales recorded yet.</div>}
-                {sales.slice(0, 60).map(s => {
+                {sales.length > 0 && visibleSales.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>No sales for {periodLabel(salesMode, salesFrom, salesTo)}.</div>}
+                {visibleSales.slice(0, 100).map(s => {
                   const profit = (s.sell_price - s.cost_price) * s.qty;
                   return (
                     <div key={s.id} className="sh-card" style={{ padding:"10px 14px", display:"flex", alignItems:"center", gap:10 }}>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:13, fontWeight:500, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{s.product_name}</div>
-                        <div style={{ fontSize:11, color:"#a7a9be" }}>{s.date} · {s.qty} {s.sale_unit || "unit"}{s.qty > 1 ? "s" : ""}{s.base_qty && s.base_qty !== s.qty ? ` (${s.base_qty})` : ""}</div>
+                        <div style={{ fontSize:11, color:"#a7a9be" }}>{s.date} {timeOf(s)} · {s.qty} {s.sale_unit || "unit"}{s.qty > 1 ? "s" : ""}{s.base_qty && s.base_qty !== s.qty ? ` (${s.base_qty})` : ""}</div>
                         {s.note && <div style={{ fontSize:11, color:"#a7a9be", fontStyle:"italic" }}>{s.note}</div>}
                       </div>
                       <div style={{ textAlign:"right", flexShrink:0 }}>
@@ -523,18 +788,134 @@ export default function ShopApp({ session, onBack, canShop = true }) {
               </div>
             )}
 
+            {/* ══════════ GIFTS / EXCHANGE ══════════ */}
+            {tab === "gifts" && (
+              <div>
+                {/* Today summary */}
+                <div className="sh-card" style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+                  <div>
+                    <div style={{ fontSize:11, color:"#a7a9be", marginBottom:4 }}>Exchange today / រង្វាន់ថ្ងៃនេះ</div>
+                    <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:22, color:"#ff8906" }}>{fmt(todayGiftCost)}</div>
+                    <div style={{ fontSize:11, color:"#a7a9be", marginTop:2 }}>cost · {todayExch.length} exchanges{todayComm > 0 && <span style={{ color:"#2cb67d" }}> · +{fmt(todayComm)} comm</span>}</div>
+                  </div>
+                  <button className="sh-btn sh-primary" onClick={openExch}>+ Record Exchange</button>
+                </div>
+
+                {/* Filter: Today / All */}
+                <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+                  {[
+                    { id:"today", label:`Today / ថ្ងៃនេះ (${todayExch.length})` },
+                    { id:"all",   label:`All / ទាំងអស់ (${exchanges.length})` },
+                  ].map(f => (
+                    <button key={f.id}
+                      className={`sh-btn ${exchFilter === f.id ? "sh-primary" : "sh-ghost"}`}
+                      style={{ flex:1, fontSize:12, padding:"8px 6px" }}
+                      onClick={() => setExchFilter(f.id)}>{f.label}</button>
+                  ))}
+                </div>
+
+                {exchanges.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>No exchanges recorded yet.</div>}
+                {exchanges.length > 0 && visibleExch.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>No exchange today / គ្មានរង្វាន់ថ្ងៃនេះ។</div>}
+                {visibleExch.slice(0, 100).map(e => (
+                  <div key={e.id} className="sh-card" style={{ padding:"10px 14px", display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ fontSize:18, flexShrink:0 }}>{e.kind === "cash" ? "💵" : "🎁"}</div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:13, fontWeight:500, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                        {e.kind === "cash" ? "Cash / រង្វាន់សាច់ប្រាក់" : e.product_name}
+                      </div>
+                      <div style={{ fontSize:11, color:"#a7a9be" }}>
+                        {e.date} {timeOf(e)}{e.kind === "item" ? ` · ${e.qty} ${e.sale_unit || "unit"}${e.qty > 1 ? "s" : ""}${e.base_qty && e.base_qty !== e.qty ? ` (${e.base_qty})` : ""}` : ""}
+                      </div>
+                      {e.note && <div style={{ fontSize:11, color:"#a7a9be", fontStyle:"italic" }}>{e.note}</div>}
+                    </div>
+                    <div style={{ textAlign:"right", flexShrink:0 }}>
+                      <div style={{ fontSize:11, color:"#f25f4c" }}>−{fmt(giftCost(e))} <span style={{ color:"#a7a9be" }}>cost</span></div>
+                      {commOf(e) > 0 && <div style={{ fontSize:11, color:"#2cb67d" }}>+{fmt(commOf(e))} <span style={{ color:"#a7a9be" }}>comm</span></div>}
+                    </div>
+                    <button className="sh-danger" onClick={() => deleteExchange(e)}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ══════════ EXPENSE ══════════ */}
+            {tab === "expense" && (
+              <div>
+                {/* Period summary */}
+                <div className="sh-card" style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+                  <div>
+                    <div style={{ fontSize:11, color:"#a7a9be", marginBottom:4 }}>{periodLabel(expMode, expFrom, expTo)}</div>
+                    <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:22, color:"#f25f4c" }}>{fmt(expViewTotal)}</div>
+                    <div style={{ fontSize:11, color:"#a7a9be", marginTop:2 }}>{expInView.length} expenses</div>
+                  </div>
+                  <button className="sh-btn sh-primary" onClick={openExp}>+ Add Expense</button>
+                </div>
+
+                {/* Filter: Today / This month / Range */}
+                {renderPeriodFilter(expMode, setExpMode, expFrom, setExpFrom, expTo, setExpTo)}
+
+                {expenses.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>No expenses recorded yet.</div>}
+                {expenses.length > 0 && visibleExp.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>No expenses for {periodLabel(expMode, expFrom, expTo)}.</div>}
+                {visibleExp.slice(0, 100).map(x => (
+                  <div key={x.id} className="sh-card" style={{ padding:"10px 14px", display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:13, fontWeight:500, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{x.category}</div>
+                      <div style={{ fontSize:11, color:"#a7a9be" }}>{x.date} {timeOf(x)}</div>
+                      {x.note && <div style={{ fontSize:11, color:"#a7a9be", fontStyle:"italic" }}>{x.note}</div>}
+                    </div>
+                    <div style={{ fontSize:13, color:"#f25f4c", fontWeight:600, flexShrink:0 }}>−{fmt(x.amount)}</div>
+                    <button className="sh-danger" onClick={() => deleteExpense(x)}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* ══════════ REPORTS ══════════ */}
             {tab === "reports" && (
               <div>
-                {/* Month navigator */}
-                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
-                  <button className="sh-btn sh-ghost" style={{ padding:"6px 14px", fontSize:18 }}
-                    onClick={() => { if (rptMonth === 0) { setRptMonth(11); setRptYear(y => y-1); } else setRptMonth(m => m-1); }}>‹</button>
-                  <div style={{ flex:1, textAlign:"center", fontFamily:"Tahoma,sans-serif", fontWeight:700, fontSize:15 }}>
-                    {MONTHS_FULL[rptMonth]} {rptYear}
+                {/* Period mode: Day / Month / Range */}
+                <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+                  {[
+                    { id:"day",   label:"Day / ថ្ងៃ" },
+                    { id:"month", label:"Month / ខែ" },
+                    { id:"range", label:"Range / ចន្លោះ" },
+                  ].map(m => (
+                    <button key={m.id}
+                      className={`sh-btn ${rptMode === m.id ? "sh-primary" : "sh-ghost"}`}
+                      style={{ flex:1, fontSize:12, padding:"8px 6px" }}
+                      onClick={() => setRptMode(m.id)}>{m.label}</button>
+                  ))}
+                </div>
+
+                {/* Period picker */}
+                {rptMode === "day" && (
+                  <div style={{ display:"flex", gap:8, marginBottom:16, alignItems:"center" }}>
+                    <input className="sh-inp" type="date" value={rptDay} max={todayStr()} onChange={e => setRptDay(e.target.value)} style={{ flex:1 }}/>
+                    <button className="sh-btn sh-ghost" style={{ fontSize:12, padding:"8px 12px", whiteSpace:"nowrap" }} onClick={() => setRptDay(todayStr())}>Today</button>
                   </div>
-                  <button className="sh-btn sh-ghost" style={{ padding:"6px 14px", fontSize:18 }}
-                    onClick={() => { if (rptMonth === 11) { setRptMonth(0); setRptYear(y => y+1); } else setRptMonth(m => m+1); }}>›</button>
+                )}
+                {rptMode === "month" && (
+                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
+                    <button className="sh-btn sh-ghost" style={{ padding:"6px 14px", fontSize:18 }}
+                      onClick={() => { if (rptMonth === 0) { setRptMonth(11); setRptYear(y => y-1); } else setRptMonth(m => m-1); }}>‹</button>
+                    <div style={{ flex:1, textAlign:"center", fontFamily:"Tahoma,sans-serif", fontWeight:700, fontSize:15 }}>
+                      {MONTHS_FULL[rptMonth]} {rptYear}
+                    </div>
+                    <button className="sh-btn sh-ghost" style={{ padding:"6px 14px", fontSize:18 }}
+                      onClick={() => { if (rptMonth === 11) { setRptMonth(0); setRptYear(y => y+1); } else setRptMonth(m => m+1); }}>›</button>
+                  </div>
+                )}
+                {rptMode === "range" && (
+                  <div style={{ display:"flex", gap:8, marginBottom:16, alignItems:"center" }}>
+                    <input className="sh-inp" type="date" value={rptFrom} max={rptTo} onChange={e => setRptFrom(e.target.value)} style={{ flex:1 }}/>
+                    <span style={{ color:"#a7a9be", fontSize:12 }}>→</span>
+                    <input className="sh-inp" type="date" value={rptTo} min={rptFrom} max={todayStr()} onChange={e => setRptTo(e.target.value)} style={{ flex:1 }}/>
+                  </div>
+                )}
+
+                {/* Period label */}
+                <div style={{ fontSize:12, color:"#ff8906", marginBottom:12, fontFamily:"Tahoma,sans-serif", fontWeight:700 }}>
+                  {rptLabel}
                 </div>
 
                 {/* Summary cards */}
@@ -562,6 +943,62 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                       <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:22 }}>{fmt(rptSales.length ? rptRevenue / rptSales.length : 0)}</div>
                     </div>
                   </div>
+                  {rptExch.length > 0 && (
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:12, paddingTop:12, borderTop:"1px solid #2e2d3d" }}>
+                      <div style={{ fontSize:11, color:"#a7a9be" }}>🎁 Exchange given / រង្វាន់ ({rptExch.length})</div>
+                      <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:16, color:"#f25f4c" }}>−{fmt(rptGift)}</div>
+                    </div>
+                  )}
+                  {rptComm > 0 && (
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:10 }}>
+                      <div style={{ fontSize:11, color:"#a7a9be" }}>💰 Commission / កម្រៃ</div>
+                      <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:16, color:"#2cb67d" }}>+{fmt(rptComm)}</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Profit & Expense analysis ── */}
+                <div style={{ fontSize:11, color:"#a7a9be", textTransform:"uppercase", letterSpacing:.5, marginBottom:10 }}>
+                  Profit &amp; Expense / ប្រាក់ចំណេញ និងចំណាយ
+                </div>
+                <div className="sh-card" style={{ marginBottom:14 }}>
+                  {[
+                    { label:"Gross profit / ចំណេញដុល",      val:rptProfit,   color:"#ff8906", sign:"" },
+                    { label:"Operating expense / ចំណាយ",   val:rptExpense,  color:"#f25f4c", sign:"−" },
+                  ].map(r => (
+                    <div key={r.label} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0" }}>
+                      <div style={{ fontSize:12, color:"#a7a9be" }}>{r.label}</div>
+                      <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:16, color:r.color }}>{r.sign}{fmt(r.val)}</div>
+                    </div>
+                  ))}
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8, paddingTop:10, borderTop:"1px solid #2e2d3d" }}>
+                    <div style={{ fontSize:13, fontWeight:600 }}>Net profit / ចំណេញសុទ្ធ</div>
+                    <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:20, color: rptNet >= 0 ? "#2cb67d" : "#f25f4c" }}>{rptNet < 0 ? "−" : ""}{fmt(Math.abs(rptNet))}</div>
+                  </div>
+                  <div style={{ fontSize:10, color:"#a7a9be", marginTop:4 }}>Profit margin: {(rptMargin * 100).toFixed(1)}% of sales</div>
+                </div>
+
+                {/* ── Break-even estimate ── */}
+                <div style={{ background:"#ff890618", border:"1px solid #ff890644", borderRadius:12, padding:14, marginBottom:14 }}>
+                  <div style={{ fontSize:12, color:"#ff8906", fontWeight:600, marginBottom:8 }}>🎯 Sales needed to cover expenses / គោលដៅលក់</div>
+                  {rptExpense === 0 ? (
+                    <div style={{ fontSize:12, color:"#a7a9be" }}>No expenses recorded for {rptLabel}.</div>
+                  ) : rptBreakEven === null ? (
+                    <div style={{ fontSize:12, color:"#a7a9be" }}>Record some sales first so we can estimate the margin and break-even sales.</div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize:13, lineHeight:1.7 }}>
+                        To cover <b style={{ color:"#f25f4c" }}>{fmt(rptExpense)}</b> of expenses at a <b>{(rptMargin * 100).toFixed(1)}%</b> margin, you need to sell about{" "}
+                        <b style={{ color:"#ff8906", fontFamily:"Tahoma,sans-serif", fontSize:16 }}>{fmt(rptBreakEven)}</b>.
+                      </div>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:10, paddingTop:10, borderTop:"1px solid #ff890633", fontSize:12 }}>
+                        <span style={{ color:"#a7a9be" }}>Actual sales: <b style={{ color:"#2cb67d" }}>{fmt(rptRevenue)}</b></span>
+                        {rptRevenue >= rptBreakEven
+                          ? <span style={{ color:"#2cb67d", fontWeight:600 }}>✓ Above target by {fmt(rptRevenue - rptBreakEven)}</span>
+                          : <span style={{ color:"#f25f4c", fontWeight:600 }}>↑ {fmt(rptBreakEven - rptRevenue)} more to break even</span>}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Top products */}
@@ -588,7 +1025,7 @@ export default function ShopApp({ session, onBack, canShop = true }) {
 
                 {rptSales.length === 0 && (
                   <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>
-                    No sales in {MONTHS_FULL[rptMonth]} {rptYear}.
+                    No sales for {rptLabel}.
                   </div>
                 )}
 
@@ -734,6 +1171,16 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                   </div>
                 </>
               )}
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                <div>
+                  <label className="sh-lbl">Date added / កាលបរិច្ឆេទ</label>
+                  <input className="sh-inp" type="date" value={prodForm.date} onChange={e => setProdForm(f => ({...f, date:e.target.value}))}/>
+                </div>
+                <div>
+                  <label className="sh-lbl">Time / ម៉ោង</label>
+                  <input className="sh-inp" type="time" value={prodForm.time} onChange={e => setProdForm(f => ({...f, time:e.target.value}))}/>
+                </div>
+              </div>
             </div>
             <div style={{ display:"flex", gap:10, marginTop:20 }}>
               <button className="sh-btn sh-ghost" style={{ flex:1 }} onClick={() => setShowProdForm(false)}>Cancel</button>
@@ -802,6 +1249,10 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                   <label className="sh-lbl">Date / កាលបរិច្ឆេទ</label>
                   <input className="sh-inp" type="date" value={saleForm.date} onChange={e => setSaleForm(f => ({...f, date:e.target.value}))}/>
                 </div>
+                <div>
+                  <label className="sh-lbl">Time / ម៉ោង</label>
+                  <input className="sh-inp" type="time" value={saleForm.time} onChange={e => setSaleForm(f => ({...f, time:e.target.value}))}/>
+                </div>
               </div>
               <div>
                 <label className="sh-lbl">Note / កំណត់ចំណាំ (optional)</label>
@@ -829,6 +1280,174 @@ export default function ShopApp({ session, onBack, canShop = true }) {
             <div style={{ display:"flex", gap:10, marginTop:20 }}>
               <button className="sh-btn sh-ghost" style={{ flex:1 }} onClick={() => setShowSaleForm(false)}>Cancel</button>
               <button className="sh-btn sh-primary" style={{ flex:2 }} onClick={recordSale}>Record Sale ✓</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ GIFT / EXCHANGE FORM MODAL ══ */}
+      {showExchForm && (
+        <div className="sh-overlay">
+          <div className="sh-modal">
+            <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:16, marginBottom:6 }}>Record Exchange / កត់ត្រារង្វាន់</div>
+            <div style={{ fontSize:11, color:"#a7a9be", marginBottom:18 }}>Items or cash given to customers. Item exchanges deduct stock.</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+              {/* Kind toggle */}
+              <div>
+                <label className="sh-lbl">Exchange type / ប្រភេទ</label>
+                <div style={{ display:"flex", gap:8 }}>
+                  {[{ id:"item", lbl:"🎁 Free item" }, { id:"cash", lbl:"💵 Cash" }].map(o => (
+                    <button key={o.id} type="button" onClick={() => setExchForm(f => ({...f, kind:o.id}))}
+                      style={{ flex:1, padding:"9px 8px", borderRadius:6, cursor:"pointer", fontFamily:"inherit", fontSize:12, border:`1px solid ${exchForm.kind===o.id ? "#ff8906" : "#2e2d3d"}`, background:exchForm.kind===o.id ? "#ff8906" : "transparent", color:exchForm.kind===o.id ? "#0f0e17" : "#a7a9be", fontWeight:exchForm.kind===o.id ? 600 : 400 }}>
+                      {o.lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {exchForm.kind === "item" && (
+                <>
+                  <div>
+                    <label className="sh-lbl">Product / ទំនិញ *</label>
+                    <select className="sh-inp" value={exchForm.product_id} onChange={e => {
+                      const np = products.find(x => x.id === e.target.value);
+                      setExchForm(f => ({...f, product_id:e.target.value, mode: np && hasPack(np) ? "box" : "unit"}));
+                    }}>
+                      <option value="">Select product...</option>
+                      {products.map(p => (
+                        <option key={p.id} value={p.id}>{p.name_en}{p.name_kh ? ` / ${p.name_kh}` : ""} — Stock: {fmtStock(p)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {exchForm.product_id && (() => {
+                    const p = products.find(x => x.id === exchForm.product_id);
+                    if (!p || !hasPack(p)) return null;
+                    return (
+                      <div>
+                        <label className="sh-lbl">Give by / អោយជា</label>
+                        <div style={{ display:"flex", gap:8 }}>
+                          {[{ id:"box", lbl:`${p.pack_unit||"box"} (${p.pack_size} ${p.unit})` }, { id:"unit", lbl:p.unit }].map(o => (
+                            <button key={o.id} type="button" onClick={() => setExchForm(f => ({...f, mode:o.id}))}
+                              style={{ flex:1, padding:"9px 8px", borderRadius:6, cursor:"pointer", fontFamily:"inherit", fontSize:12, border:`1px solid ${exchForm.mode===o.id ? "#ff8906" : "#2e2d3d"}`, background:exchForm.mode===o.id ? "#ff8906" : "transparent", color:exchForm.mode===o.id ? "#0f0e17" : "#a7a9be", fontWeight:exchForm.mode===o.id ? 600 : 400 }}>
+                              {o.lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div>
+                    <label className="sh-lbl">Commission / កម្រៃ ({cur}) <span style={{ opacity:0.6 }}>(profit, optional)</span></label>
+                    <input className="sh-inp" type="number" min="0" step="any" value={exchForm.commission}
+                      onChange={e => setExchForm(f => ({...f, commission:e.target.value}))}
+                      placeholder={cur === "KHR" ? "e.g. 500" : "e.g. 0.10"}/>
+                  </div>
+                </>
+              )}
+
+              {exchForm.kind === "cash" && (
+                <div>
+                  <label className="sh-lbl">Amount / ចំនួនទឹកប្រាក់ ({cur}) *</label>
+                  <input className="sh-inp" type="number" min="0" step="any" value={exchForm.cash_value}
+                    onChange={e => setExchForm(f => ({...f, cash_value:e.target.value}))}
+                    placeholder={cur === "KHR" ? "e.g. 1000" : "e.g. 0.25"}/>
+                </div>
+              )}
+
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                {exchForm.kind === "item" && (
+                  <div>
+                    {(() => {
+                      const p = products.find(x => x.id === exchForm.product_id);
+                      const u = p && hasPack(p) && exchForm.mode === "box" ? (p.pack_unit||"box") : (p ? p.unit : "");
+                      return <label className="sh-lbl">Qty / ចំនួន{u ? ` (${u})` : ""}</label>;
+                    })()}
+                    <input className="sh-inp" type="number" min="1" value={exchForm.qty} onChange={e => setExchForm(f => ({...f, qty:e.target.value}))}/>
+                  </div>
+                )}
+                <div>
+                  <label className="sh-lbl">Date / កាលបរិច្ឆេទ</label>
+                  <input className="sh-inp" type="date" value={exchForm.date} onChange={e => setExchForm(f => ({...f, date:e.target.value}))}/>
+                </div>
+                <div>
+                  <label className="sh-lbl">Time / ម៉ោង</label>
+                  <input className="sh-inp" type="time" value={exchForm.time} onChange={e => setExchForm(f => ({...f, time:e.target.value}))}/>
+                </div>
+              </div>
+
+              <div>
+                <label className="sh-lbl">Note / កំណត់ចំណាំ (optional)</label>
+                <input className="sh-inp" value={exchForm.note} onChange={e => setExchForm(f => ({...f, note:e.target.value}))} placeholder="e.g. promo, loyal customer"/>
+              </div>
+
+              {/* Cost preview */}
+              {exchForm.kind === "item" && exchForm.product_id && parseInt(exchForm.qty) > 0 && (() => {
+                const p = products.find(x => x.id === exchForm.product_id);
+                const qty = parseInt(exchForm.qty) || 0;
+                if (!p || qty < 1) return null;
+                const isBox = hasPack(p) && exchForm.mode === "box";
+                const unitCost = isBox ? p.pack_cost_price : p.cost_price;
+                const baseQty = isBox ? qty * p.pack_size : qty;
+                const short = baseQty > p.stock;
+                const cost = unitCost * qty;
+                const commEntered = parseFloat(exchForm.commission) || 0;
+                const commUsd = cur === "KHR" ? commEntered / KHR_RATE : commEntered;
+                const net = commUsd - cost;
+                return (
+                  <div style={{ background:short ? "#f25f4c18" : "#ff890618", border:`1px solid ${short ? "#f25f4c44" : "#ff890633"}`, borderRadius:8, padding:"10px 14px", fontSize:12, lineHeight:1.7 }}>
+                    Cost: <b style={{ color:"#f25f4c" }}>−{fmt(cost)}</b>
+                    {commUsd > 0 && <> · Commission: <b style={{ color:"#2cb67d" }}>+{fmt(commUsd)}</b> · Net: <b style={{ color: net >= 0 ? "#2cb67d" : "#f25f4c" }}>{net >= 0 ? "+" : "−"}{fmt(Math.abs(net))}</b></>}
+                    <div style={{ color:"#a7a9be" }}>deducts {baseQty} {p.unit}</div>
+                    {short && <div style={{ color:"#f25f4c", marginTop:4 }}>⚠ Only {fmtStock(p)} in stock</div>}
+                  </div>
+                );
+              })()}
+            </div>
+            <div style={{ display:"flex", gap:10, marginTop:20 }}>
+              <button className="sh-btn sh-ghost" style={{ flex:1 }} onClick={() => setShowExchForm(false)}>Cancel</button>
+              <button className="sh-btn sh-primary" style={{ flex:2 }} onClick={recordExchange}>Record Exchange ✓</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ EXPENSE FORM MODAL ══ */}
+      {showExpForm && (
+        <div className="sh-overlay">
+          <div className="sh-modal">
+            <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:16, marginBottom:6 }}>Add Expense / បន្ថែមចំណាយ</div>
+            <div style={{ fontSize:11, color:"#a7a9be", marginBottom:18 }}>Running costs of the shop (rent, electricity, salary, …).</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+              <div>
+                <label className="sh-lbl">Category / ប្រភេទ</label>
+                <select className="sh-inp" value={expForm.category} onChange={e => setExpForm(f => ({...f, category:e.target.value}))}>
+                  {EXPENSE_CATS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="sh-lbl">Amount / ចំនួនទឹកប្រាក់ ({cur}) *</label>
+                <input className="sh-inp" type="number" min="0" step="any" value={expForm.amount}
+                  onChange={e => setExpForm(f => ({...f, amount:e.target.value}))}
+                  placeholder={cur === "KHR" ? "e.g. 200000" : "e.g. 50.00"}/>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                <div>
+                  <label className="sh-lbl">Date / កាលបរិច្ឆេទ</label>
+                  <input className="sh-inp" type="date" value={expForm.date} onChange={e => setExpForm(f => ({...f, date:e.target.value}))}/>
+                </div>
+                <div>
+                  <label className="sh-lbl">Time / ម៉ោង</label>
+                  <input className="sh-inp" type="time" value={expForm.time} onChange={e => setExpForm(f => ({...f, time:e.target.value}))}/>
+                </div>
+              </div>
+              <div>
+                <label className="sh-lbl">Note / កំណត់ចំណាំ (optional)</label>
+                <input className="sh-inp" value={expForm.note} onChange={e => setExpForm(f => ({...f, note:e.target.value}))} placeholder="e.g. June rent"/>
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:10, marginTop:20 }}>
+              <button className="sh-btn sh-ghost" style={{ flex:1 }} onClick={() => setShowExpForm(false)}>Cancel</button>
+              <button className="sh-btn sh-primary" style={{ flex:2 }} onClick={recordExpense}>Add Expense ✓</button>
             </div>
           </div>
         </div>
