@@ -609,11 +609,13 @@ export default function ShopApp({ session, onBack, canShop = true }) {
         .sh-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #1e1d2e}
         .sh-row:last-child{border-bottom:none}
         .sh-lbl{font-size:11px;color:#a7a9be;display:block;margin-bottom:4px}
+        .dt-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
         @media(max-width:480px){
           .sh-modal{border-radius:20px 20px 0 0;max-height:92vh;max-width:100%;width:100%}
           .sh-overlay{align-items:flex-end;padding:0}
           .sh-inp{min-height:44px}
           .sh-tab{padding:8px 10px;font-size:11px}
+          .dt-grid{grid-template-columns:1fr}
         }
       `}</style>
 
@@ -1193,7 +1195,7 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                   </div>
                 </>
               )}
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              <div className="dt-grid">
                 <div>
                   <label className="sh-lbl">Date added / កាលបរិច្ឆេទ</label>
                   <input className="sh-inp" type="date" value={prodForm.date} onChange={e => setProdForm(f => ({...f, date:e.target.value}))}/>
@@ -1258,7 +1260,7 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                   </div>
                 );
               })()}
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              <div className="dt-grid">
                 <div>
                   {(() => {
                     const p = products.find(x => x.id === saleForm.product_id);
@@ -1379,7 +1381,7 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                 </div>
               )}
 
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              <div className="dt-grid">
                 {exchForm.kind === "item" && (
                   <div>
                     {(() => {
@@ -1392,7 +1394,10 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                 )}
                 <div>
                   <label className="sh-lbl">Date / កាលបរិច្ឆេទ</label>
-                  <input className="sh-inp" type="date" value={exchForm.date} onChange={e => setExchForm(f => ({...f, date:e.target.value}))}/>
+                  {(() => {
+                    const ep = products.find(x => x.id === exchForm.product_id);
+                    return <input className="sh-inp" type="date" value={exchForm.date} min={exchForm.kind === "item" && ep ? dateOf(ep) : undefined} onChange={e => setExchForm(f => ({...f, date:e.target.value}))}/>;
+                  })()}
                 </div>
                 <div>
                   <label className="sh-lbl">Time / ម៉ោង</label>
@@ -1455,7 +1460,7 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                   onChange={e => setExpForm(f => ({...f, amount:e.target.value}))}
                   placeholder={cur === "KHR" ? "e.g. 200000" : "e.g. 50.00"}/>
               </div>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              <div className="dt-grid">
                 <div>
                   <label className="sh-lbl">Date / កាលបរិច្ឆេទ</label>
                   <input className="sh-inp" type="date" value={expForm.date} onChange={e => setExpForm(f => ({...f, date:e.target.value}))}/>

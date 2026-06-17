@@ -1178,15 +1178,13 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
                 <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Amount (USD)</label>
                 <input className="input" type="number" min="0" step="0.01" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
               </div>
-              <div style={{display:"flex",gap:10}}>
-                <div style={{display:"flex",flexDirection:"column",gap:4,flex:2,minWidth:0}}>
-                  <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Date</label>
-                  <input className="input" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={{textAlign:"left",width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:4,flex:1,minWidth:0}}>
-                  <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Time</label>
-                  <input className="input" type="time" value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))} style={{textAlign:"left",width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/>
-                </div>
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Date</label>
+                <input className="input" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={{textAlign:"left",width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Time</label>
+                <input className="input" type="time" value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))} style={{textAlign:"left",width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Note <span style={{opacity:0.5}}>(optional)</span></label>
