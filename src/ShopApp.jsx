@@ -107,14 +107,18 @@ export default function ShopApp({ session, onBack, canShop = true }) {
   const [expForm, setExpForm]           = useState(BLANK_EXPENSE);
 
   // Sales list filter: "today" | "month" | "range"
-  const [salesMode, setSalesMode] = useState("today");
-  const [salesFrom, setSalesFrom] = useState(todayStr());
-  const [salesTo, setSalesTo]     = useState(todayStr());
+  const [salesMode, setSalesMode]   = useState("today");
+  const [salesFrom, setSalesFrom]   = useState(todayStr());
+  const [salesTo, setSalesTo]       = useState(todayStr());
+  const [salesMonth, setSalesMonth] = useState(new Date().getMonth());
+  const [salesYear, setSalesYear]   = useState(new Date().getFullYear());
 
   // Expense list filter: "today" | "month" | "range"
-  const [expMode, setExpMode] = useState("month");
-  const [expFrom, setExpFrom] = useState(todayStr());
-  const [expTo, setExpTo]     = useState(todayStr());
+  const [expMode, setExpMode]   = useState("month");
+  const [expFrom, setExpFrom]   = useState(todayStr());
+  const [expTo, setExpTo]       = useState(todayStr());
+  const [expMonth, setExpMonth] = useState(new Date().getMonth());
+  const [expYear, setExpYear]   = useState(new Date().getFullYear());
 
   // Report period: "day" | "month" | "range"
   const [rptMode, setRptMode]   = useState("day");
@@ -254,6 +258,8 @@ export default function ShopApp({ session, onBack, canShop = true }) {
     if (qty < 1) { showToast("Qty must be at least 1", "#f25f4c"); return; }
     const prod = products.find(p => p.id === saleForm.product_id);
     if (!prod) return;
+    const regDate = dateOf(prod);   // product registration date (from created_at)
+    if (saleForm.date < regDate) { showToast(`Can't sell before product was added (${regDate})`, "#f25f4c"); return; }
     const isBox     = hasPack(prod) && saleForm.mode === "box";
     const saleUnit  = isBox ? (prod.pack_unit || "box") : prod.unit;
     const baseQty   = isBox ? qty * prod.pack_size : qty;          // base units consumed
@@ -333,6 +339,8 @@ export default function ShopApp({ session, onBack, canShop = true }) {
     // Item gift — deducts stock
     const prod = products.find(p => p.id === exchForm.product_id);
     if (!prod) { showToast("Select a product", "#f25f4c"); return; }
+    const regDate = dateOf(prod);   // product registration date (from created_at)
+    if (exchForm.date < regDate) { showToast(`Can't give before product was added (${regDate})`, "#f25f4c"); return; }
     const qty = parseInt(exchForm.qty) || 0;
     if (qty < 1) { showToast("Enter a quantity", "#f25f4c"); return; }
     const isBox    = hasPack(prod) && exchForm.mode === "box";
@@ -488,39 +496,53 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                    :                       `${MONTHS_FULL[rptMonth]} ${rptYear}`;
 
   const nowD = new Date();
-  const inMonth = (row) => { const d = new Date(row.date); return d.getMonth() === nowD.getMonth() && d.getFullYear() === nowD.getFullYear(); };
-  // Filter rows by a tab's Today / This month / Range selection.
-  const byPeriod = (rows, mode, from, to) => rows.filter(r =>
-    mode === "today" ? r.date === todayStr()
-    : mode === "range" ? (from && to && r.date >= from && r.date <= to)
-    : inMonth(r));
-  const periodLabel = (mode, from, to) =>
-    mode === "today" ? "Today / ថ្ងៃនេះ"
-    : mode === "range" ? (from && to ? `${from} → ${to}` : "Pick dates")
-    : `This month / ខែ${MONTHS_FULL[nowD.getMonth()]}`;
-  // Today / This month / Range segmented filter (shared by Sales & Expense tabs).
-  const renderPeriodFilter = (mode, setMode, from, setFrom, to, setTo) => (
+  // Filter rows by a tab's Today / Month / Range selection. Month uses the tab's
+  // own month/year so the user can navigate to other months.
+  const byPeriod = (rows, p) => rows.filter(r =>
+    p.mode === "today" ? r.date === todayStr()
+    : p.mode === "range" ? (p.from && p.to && r.date >= p.from && r.date <= p.to)
+    : (() => { const d = new Date(r.date); return d.getMonth() === p.month && d.getFullYear() === p.year; })());
+  const periodLabel = (p) =>
+    p.mode === "today" ? "Today / ថ្ងៃនេះ"
+    : p.mode === "range" ? (p.from && p.to ? `${p.from} → ${p.to}` : "Pick dates")
+    : `${MONTHS_FULL[p.month]} ${p.year}`;
+  // Today / Month / Range segmented filter (shared by Sales & Expense tabs).
+  const renderPeriodFilter = (p) => (
     <>
-      <div style={{ display:"flex", gap:8, marginBottom: mode === "range" ? 10 : 14 }}>
+      <div style={{ display:"flex", gap:8, marginBottom: p.mode === "today" ? 14 : 10 }}>
         {[
           { id:"today", label:"Today / ថ្ងៃនេះ" },
-          { id:"month", label:"Month / ខែនេះ" },
+          { id:"month", label:"Month / ខែ" },
           { id:"range", label:"Range / ចន្លោះ" },
         ].map(o => (
-          <button key={o.id} className={`sh-btn ${mode === o.id ? "sh-primary" : "sh-ghost"}`}
+          <button key={o.id} className={`sh-btn ${p.mode === o.id ? "sh-primary" : "sh-ghost"}`}
             style={{ flex:1, fontSize:11, padding:"8px 4px" }}
-            onClick={() => setMode(o.id)}>{o.label}</button>
+            onClick={() => p.setMode(o.id)}>{o.label}</button>
         ))}
       </div>
-      {mode === "range" && (
+      {p.mode === "month" && (
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+          <button className="sh-btn sh-ghost" style={{ padding:"6px 14px", fontSize:18 }}
+            onClick={() => { if (p.month === 0) { p.setMonth(11); p.setYear(y => y-1); } else p.setMonth(m => m-1); }}>‹</button>
+          <div style={{ flex:1, textAlign:"center", fontFamily:"Tahoma,sans-serif", fontWeight:700, fontSize:15 }}>
+            {MONTHS_FULL[p.month]} {p.year}
+          </div>
+          <button className="sh-btn sh-ghost" style={{ padding:"6px 14px", fontSize:18 }}
+            onClick={() => { if (p.month === 11) { p.setMonth(0); p.setYear(y => y+1); } else p.setMonth(m => m+1); }}>›</button>
+        </div>
+      )}
+      {p.mode === "range" && (
         <div style={{ display:"flex", gap:8, marginBottom:14, alignItems:"center" }}>
-          <input className="sh-inp" type="date" value={from} max={to || todayStr()} onChange={e => setFrom(e.target.value)} style={{ flex:1 }}/>
+          <input className="sh-inp" type="date" value={p.from} max={p.to || todayStr()} onChange={e => p.setFrom(e.target.value)} style={{ flex:1 }}/>
           <span style={{ color:"#a7a9be", fontSize:12 }}>→</span>
-          <input className="sh-inp" type="date" value={to} min={from} max={todayStr()} onChange={e => setTo(e.target.value)} style={{ flex:1 }}/>
+          <input className="sh-inp" type="date" value={p.to} min={p.from} max={todayStr()} onChange={e => p.setTo(e.target.value)} style={{ flex:1 }}/>
         </div>
       )}
     </>
   );
+  // Bundle each tab's period state for the helpers above.
+  const salesPeriod = { mode:salesMode, setMode:setSalesMode, from:salesFrom, setFrom:setSalesFrom, to:salesTo, setTo:setSalesTo, month:salesMonth, setMonth:setSalesMonth, year:salesYear, setYear:setSalesYear };
+  const expPeriod   = { mode:expMode,   setMode:setExpMode,   from:expFrom,   setFrom:setExpFrom,   to:expTo,   setTo:setExpTo,   month:expMonth,   setMonth:setExpMonth,   year:expYear,   setYear:setExpYear };
 
   const todayExch     = exchanges.filter(e => e.date === todayStr());
   const todayGiftCost = todayExch.reduce((a,e) => a + giftCost(e), 0);
@@ -529,13 +551,13 @@ export default function ShopApp({ session, onBack, canShop = true }) {
   const sortByDateTime = (a,b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) || (new Date(b.created_at||0) - new Date(a.created_at||0));
 
   // Sales tab — filtered view + totals
-  const salesInView    = byPeriod(sales, salesMode, salesFrom, salesTo);
+  const salesInView    = byPeriod(sales, salesPeriod);
   const salesViewRev    = salesInView.reduce((a,s) => a + s.sell_price * s.qty, 0);
   const salesViewProfit = salesInView.reduce((a,s) => a + (s.sell_price - s.cost_price) * s.qty, 0);
   const visibleSales    = salesInView.slice().sort(sortByDateTime);
 
   // Expense tab — filtered view + total
-  const expInView    = byPeriod(expenses, expMode, expFrom, expTo);
+  const expInView    = byPeriod(expenses, expPeriod);
   const expViewTotal = expInView.reduce((a,x) => a + Number(x.amount), 0);
   const visibleExp   = expInView.slice().sort(sortByDateTime);
 
@@ -754,7 +776,7 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                 {/* Period summary */}
                 <div className="sh-card" style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
                   <div>
-                    <div style={{ fontSize:11, color:"#a7a9be", marginBottom:4 }}>{periodLabel(salesMode, salesFrom, salesTo)}</div>
+                    <div style={{ fontSize:11, color:"#a7a9be", marginBottom:4 }}>{periodLabel(salesPeriod)}</div>
                     <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:22, color:"#2cb67d" }}>{fmt(salesViewRev)}</div>
                     <div style={{ fontSize:11, color:"#ff8906", marginTop:2 }}>Profit: {fmt(salesViewProfit)} · {salesInView.length} sales</div>
                   </div>
@@ -763,11 +785,11 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                   </button>
                 </div>
 
-                {/* Filter: Today / This month / Range */}
-                {renderPeriodFilter(salesMode, setSalesMode, salesFrom, setSalesFrom, salesTo, setSalesTo)}
+                {/* Filter: Today / Month / Range */}
+                {renderPeriodFilter(salesPeriod)}
 
                 {sales.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>No sales recorded yet.</div>}
-                {sales.length > 0 && visibleSales.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>No sales for {periodLabel(salesMode, salesFrom, salesTo)}.</div>}
+                {sales.length > 0 && visibleSales.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>No sales for {periodLabel(salesPeriod)}.</div>}
                 {visibleSales.slice(0, 100).map(s => {
                   const profit = (s.sell_price - s.cost_price) * s.qty;
                   return (
@@ -844,18 +866,18 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                 {/* Period summary */}
                 <div className="sh-card" style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
                   <div>
-                    <div style={{ fontSize:11, color:"#a7a9be", marginBottom:4 }}>{periodLabel(expMode, expFrom, expTo)}</div>
+                    <div style={{ fontSize:11, color:"#a7a9be", marginBottom:4 }}>{periodLabel(expPeriod)}</div>
                     <div style={{ fontFamily:"Tahoma,sans-serif", fontWeight:800, fontSize:22, color:"#f25f4c" }}>{fmt(expViewTotal)}</div>
                     <div style={{ fontSize:11, color:"#a7a9be", marginTop:2 }}>{expInView.length} expenses</div>
                   </div>
                   <button className="sh-btn sh-primary" onClick={openExp}>+ Add Expense</button>
                 </div>
 
-                {/* Filter: Today / This month / Range */}
-                {renderPeriodFilter(expMode, setExpMode, expFrom, setExpFrom, expTo, setExpTo)}
+                {/* Filter: Today / Month / Range */}
+                {renderPeriodFilter(expPeriod)}
 
                 {expenses.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>No expenses recorded yet.</div>}
-                {expenses.length > 0 && visibleExp.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>No expenses for {periodLabel(expMode, expFrom, expTo)}.</div>}
+                {expenses.length > 0 && visibleExp.length === 0 && <div style={{ textAlign:"center", color:"#a7a9be", padding:40, fontSize:13 }}>No expenses for {periodLabel(expPeriod)}.</div>}
                 {visibleExp.slice(0, 100).map(x => (
                   <div key={x.id} className="sh-card" style={{ padding:"10px 14px", display:"flex", alignItems:"center", gap:10 }}>
                     <div style={{ flex:1, minWidth:0 }}>
@@ -1247,7 +1269,10 @@ export default function ShopApp({ session, onBack, canShop = true }) {
                 </div>
                 <div>
                   <label className="sh-lbl">Date / កាលបរិច្ឆេទ</label>
-                  <input className="sh-inp" type="date" value={saleForm.date} onChange={e => setSaleForm(f => ({...f, date:e.target.value}))}/>
+                  {(() => {
+                    const sp = products.find(x => x.id === saleForm.product_id);
+                    return <input className="sh-inp" type="date" value={saleForm.date} min={sp ? dateOf(sp) : undefined} onChange={e => setSaleForm(f => ({...f, date:e.target.value}))}/>;
+                  })()}
                 </div>
                 <div>
                   <label className="sh-lbl">Time / ម៉ោង</label>
