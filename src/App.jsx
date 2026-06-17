@@ -32,6 +32,24 @@ function fmtDateTime(t) {
   return `${day} ${String(c.getHours()).padStart(2,"0")}:${String(c.getMinutes()).padStart(2,"0")}`;
 }
 
+const pad2 = n => String(n).padStart(2, "0");
+// Combine a yyyy-mm-dd date and an HH:MM time (local) into an ISO timestamp.
+// The `date` column keeps the day; the picked time is stored in `created_at`.
+function toTimestamp(date, time) {
+  const t = /^\d{2}:\d{2}$/.test(time || "") ? time : "00:00";
+  return new Date(`${date}T${t}`).toISOString();
+}
+// Local HH:MM from a row's created_at (falls back to now for old rows).
+function timeOf(t) {
+  const c = t && t.created_at ? new Date(t.created_at) : new Date();
+  return `${pad2(c.getHours())}:${pad2(c.getMinutes())}`;
+}
+// A fresh, empty transaction form prefilled with today's date and the current time.
+function blankForm() {
+  const d = new Date();
+  return { type:"expense", category:"", amount:"", note:"", date:d.toISOString().split("T")[0], time:`${pad2(d.getHours())}:${pad2(d.getMinutes())}` };
+}
+
 function getDisplayName(session) {
   const meta = session?.user?.user_metadata?.username;
   if (meta) return meta.charAt(0).toUpperCase() + meta.slice(1);
@@ -644,7 +662,7 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
   const [showCatManager, setShowCatManager]     = useState(false);
   const [customCats, setCustomCats]             = useState([]);
   const [activeTab, setActiveTab]               = useState("dashboard");
-  const [form, setForm] = useState({ type:"income", category:"", amount:"", note:"", date:now.toISOString().split("T")[0] });
+  const [form, setForm] = useState(blankForm());
   const [editId, setEditId]                     = useState(null);
   const [page, setPage]                         = useState(1);
   const [syncStatus, setSyncStatus]             = useState("loading");
@@ -719,29 +737,30 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
     if (!form.date)     { showToast("Please pick a date","#f25f4c");      return; }
     const id = editId;
     setSyncStatus("saving");
+    const created_at = toTimestamp(form.date, form.time);
     if (id) {
       const { error } = await supabase.from("transactions")
-        .update({ type:form.type, category:form.category, amount:parseFloat(form.amount), note:form.note||"", date:form.date })
+        .update({ type:form.type, category:form.category, amount:parseFloat(form.amount), note:form.note||"", date:form.date, created_at })
         .eq("id", id);
       if (error) { showToast("Failed to save","#f25f4c"); setSyncStatus("error"); return; }
-      setTransactions(p=>p.map(t=>t.id===id?{...t,type:form.type,category:form.category,amount:parseFloat(form.amount),note:form.note||"",date:form.date}:t));
+      setTransactions(p=>p.map(t=>t.id===id?{...t,type:form.type,category:form.category,amount:parseFloat(form.amount),note:form.note||"",date:form.date,created_at}:t));
       setEditId(null);
     } else {
       const { data, error } = await supabase.from("transactions")
-        .insert({ user_id:session.user.id, type:form.type, category:form.category, amount:parseFloat(form.amount), note:form.note||"", date:form.date })
+        .insert({ user_id:session.user.id, type:form.type, category:form.category, amount:parseFloat(form.amount), note:form.note||"", date:form.date, created_at })
         .select().single();
       if (error) { showToast("Failed to add","#f25f4c"); setSyncStatus("error"); return; }
       setTransactions(p=>[data,...p]);
       setShowMigrationBanner(false);
     }
-    setForm({type:"income",category:"",amount:"",note:"",date:now.toISOString().split("T")[0]});
+    setForm(blankForm());
     setShowForm(false);
     showToast(id?"Updated ✓":"Added ✓");
     setSyncStatus("synced");
   }
 
   function handleEdit(t) {
-    setForm({type:t.type,category:t.category,amount:String(t.amount),note:t.note||"",date:t.date});
+    setForm({type:t.type,category:t.category,amount:String(t.amount),note:t.note||"",date:t.date,time:timeOf(t)});
     setEditId(t.id); setShowForm(true); setActiveTab("dashboard");
   }
 
@@ -924,7 +943,7 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
               <span className="currency-full">{currency==="USD"?"$ USD":"៛ KHR"}</span>
               <span className="currency-short">{currency==="USD"?"$":"K"}</span>
             </button>
-            <button className="btn btn-primary btn-add" onClick={()=>{setEditId(null);setForm({type:"income",category:"",amount:"",note:"",date:now.toISOString().split("T")[0]});setShowForm(true);}}>
+            <button className="btn btn-primary btn-add" onClick={()=>{setEditId(null);setForm(blankForm());setShowForm(true);}}>
               + Add
             </button>
           </div>
@@ -1119,7 +1138,7 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
               {MONTHS_FULL[selectedMonth]} {selectedYear} · {filtered.length} transactions
             </div>
             {filtered.length===0?<div style={{textAlign:"center",color:"#a7a9be",padding:"24px 0",fontSize:13}}>No transactions this month</div>
-              :[...filtered].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=>(
+              :[...filtered].sort((a,b)=>new Date(b.date)-new Date(a.date)||new Date(b.created_at||0)-new Date(a.created_at||0)).map(t=>(
                 <div key={t.id} className="row-item">
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:10,color:"#a7a9be",marginBottom:2,whiteSpace:"nowrap"}}>{fmtDateTime(t)}</div>
@@ -1159,9 +1178,15 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
                 <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Amount (USD)</label>
                 <input className="input" type="number" min="0" step="0.01" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/>
               </div>
-              <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Date</label>
-                <input className="input" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={{textAlign:"left",width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/>
+              <div style={{display:"flex",gap:10}}>
+                <div style={{display:"flex",flexDirection:"column",gap:4,flex:2,minWidth:0}}>
+                  <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Date</label>
+                  <input className="input" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={{textAlign:"left",width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:4,flex:1,minWidth:0}}>
+                  <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Time</label>
+                  <input className="input" type="time" value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))} style={{textAlign:"left",width:"100%",maxWidth:"100%",boxSizing:"border-box"}}/>
+                </div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 <label style={{fontSize:11,color:"#a7a9be",paddingLeft:2}}>Note <span style={{opacity:0.5}}>(optional)</span></label>
