@@ -1,10 +1,16 @@
 {
   "files": {
-    "main.js": "/raksa-finance/static/js/main.6c7e9767.js",
+    "main.js": "/raksa-finance/static/js/main.09011141.js",
+    "static/js/238.ca1e2b90.chunk.js": "/raksa-finance/static/js/238.ca1e2b90.chunk.js",
+    "static/js/903.60d5d988.chunk.js": "/raksa-finance/static/js/903.60d5d988.chunk.js",
+    "static/js/749.fca2ab84.chunk.js": "/raksa-finance/static/js/749.fca2ab84.chunk.js",
+    "static/media/pdf.worker.min.js": "/raksa-finance/static/media/pdf.worker.min.a940ca7253503ab1fb21.js",
     "index.html": "/raksa-finance/index.html",
-    "main.6c7e9767.js.map": "/raksa-finance/static/js/main.6c7e9767.js.map"
+    "main.09011141.js.map": "/raksa-finance/static/js/main.09011141.js.map",
+    "238.ca1e2b90.chunk.js.map": "/raksa-finance/static/js/238.ca1e2b90.chunk.js.map",
+    "749.fca2ab84.chunk.js.map": "/raksa-finance/static/js/749.fca2ab84.chunk.js.map"
   },
   "entrypoints": [
-    "static/js/main.6c7e9767.js"
+    "static/js/main.09011141.js"
   ]
 }
