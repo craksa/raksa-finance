@@ -5,9 +5,11 @@
   "homepage": "https://craksa.github.io/raksa-finance",
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",
+    "pdfjs-dist": "^3.11.174",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1"
+    "react-scripts": "5.0.1",
+    "xlsx": "^0.18.5"
   },
   "scripts": {
     "start": "react-scripts start",

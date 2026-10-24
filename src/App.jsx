@@ -2,12 +2,16 @@
 import { supabase } from "./supabaseClient";
 import ShopApp from "./ShopApp";
 import AdminApp from "./AdminApp";
+import BankImportModal, { TRANSFER_CAT } from "./BankImport";
 
 // Seeded into each user's account on first load; after that the DB is the source of truth
 const CATEGORIES = {
-  income: ["Salary", "Freelance", "Bonus", "Investment", "Other Income"],
-  expense: ["Food & Dining", "Transport", "Utilities", "Shopping", "Health", "Entertainment", "Rent", "Savings", "Investment", "Other"],
+  income: ["Salary", "Freelance", "Bonus", "Investment", "Other Income", TRANSFER_CAT],
+  expense: ["Food & Dining", "Transport", "Utilities", "Shopping", "Health", "Entertainment", "Rent", "Savings", "Investment", "Other", TRANSFER_CAT],
 };
+// Loans, repayments and money passing through: recorded, but kept out of
+// income/expense totals so they don't inflate real earning and spending.
+const isReal = t => t.category !== TRANSFER_CAT;
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const now = new Date();
@@ -669,6 +673,7 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
   const [toast, setToast]                       = useState(null);
   const [showMigrationBanner, setShowMigrationBanner] = useState(false);
   const [showUserMenu, setShowUserMenu]         = useState(false);
+  const [showBankImport, setShowBankImport]     = useState(false);
 
   const fmt = n => currency === "USD" ? fmtUSD(n) : fmtKHR(n);
   const showToast = (msg, color="#2cb67d") => { setToast({msg,color}); setTimeout(()=>setToast(null),3000); };
@@ -692,6 +697,13 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
           const { data: seeded } = await supabase.from("categories").insert(seed).select();
           rows = (seeded || []).sort((a,b) => a.name.localeCompare(b.name));
         }
+        // Accounts created before the Loan / Transfer category existed get it added once
+        const missing = ["income","expense"].filter(type => !rows.some(c => c.type === type && c.name === TRANSFER_CAT));
+        if (missing.length) {
+          const { data: added } = await supabase.from("categories")
+            .insert(missing.map(type => ({ user_id: session.user.id, type, name: TRANSFER_CAT }))).select();
+          rows = [...rows, ...(added || [])].sort((a,b) => a.name.localeCompare(b.name));
+        }
         setCustomCats(rows);
       }
       const txns = txRes.data || [];
@@ -712,20 +724,22 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
 
   // ── Monthly ──
   const filtered = transactions.filter(t => { const d=new Date(t.date); return d.getMonth()===selectedMonth&&d.getFullYear()===selectedYear; });
-  const totalIncome  = filtered.filter(t=>t.type==="income").reduce((s,t)=>s+Number(t.amount),0);
-  const totalExpense = filtered.filter(t=>t.type==="expense").reduce((s,t)=>s+Number(t.amount),0);
+  const totalIncome  = filtered.filter(t=>t.type==="income"&&isReal(t)).reduce((s,t)=>s+Number(t.amount),0);
+  const totalExpense = filtered.filter(t=>t.type==="expense"&&isReal(t)).reduce((s,t)=>s+Number(t.amount),0);
+  const xferIn  = filtered.filter(t=>t.type==="income"&&!isReal(t)).reduce((s,t)=>s+Number(t.amount),0);
+  const xferOut = filtered.filter(t=>t.type==="expense"&&!isReal(t)).reduce((s,t)=>s+Number(t.amount),0);
   const balance = totalIncome-totalExpense;
   const TX_PER_PAGE = 10;
   const totalTxPages = Math.max(1, Math.ceil(filtered.length / TX_PER_PAGE));
   const txPage = Math.min(page, totalTxPages);
-  const catTotals = cats.expense.map(cat=>({cat,total:filtered.filter(t=>t.type==="expense"&&t.category===cat).reduce((s,t)=>s+Number(t.amount),0)})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
+  const catTotals = cats.expense.filter(cat=>cat!==TRANSFER_CAT).map(cat=>({cat,total:filtered.filter(t=>t.type==="expense"&&t.category===cat).reduce((s,t)=>s+Number(t.amount),0)})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
 
   // ── Yearly ──
   const yTx = transactions.filter(t=>new Date(t.date).getFullYear()===selectedYear);
-  const yInc = yTx.filter(t=>t.type==="income").reduce((s,t)=>s+Number(t.amount),0);
-  const yExp = yTx.filter(t=>t.type==="expense").reduce((s,t)=>s+Number(t.amount),0);
+  const yInc = yTx.filter(t=>t.type==="income"&&isReal(t)).reduce((s,t)=>s+Number(t.amount),0);
+  const yExp = yTx.filter(t=>t.type==="expense"&&isReal(t)).reduce((s,t)=>s+Number(t.amount),0);
   const yBal = yInc-yExp;
-  const mData = MONTHS.map((m,i)=>{ const mx=yTx.filter(t=>new Date(t.date).getMonth()===i); const inc=mx.filter(t=>t.type==="income").reduce((s,t)=>s+Number(t.amount),0); const exp=mx.filter(t=>t.type==="expense").reduce((s,t)=>s+Number(t.amount),0); return {month:m,income:inc,expense:exp,balance:inc-exp,count:mx.length}; });
+  const mData = MONTHS.map((m,i)=>{ const mx=yTx.filter(t=>new Date(t.date).getMonth()===i); const inc=mx.filter(t=>t.type==="income"&&isReal(t)).reduce((s,t)=>s+Number(t.amount),0); const exp=mx.filter(t=>t.type==="expense"&&isReal(t)).reduce((s,t)=>s+Number(t.amount),0); return {month:m,income:inc,expense:exp,balance:inc-exp,count:mx.length}; });
   const maxBar = Math.max(...mData.map(m=>Math.max(m.income,m.expense)),1);
   const activeMo = mData.filter(m=>m.income>0||m.expense>0);
   const bestMo  = activeMo.length ? activeMo.reduce((a,b)=>b.balance>a.balance?b:a,activeMo[0]) : null;
@@ -929,6 +943,7 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
                   <button onClick={()=>{setShowUserMenu(false);setShowProfile(true);}} style={menuItem}>👤 Profile</button>
                   <button onClick={()=>{setShowUserMenu(false);setShowCatManager(true);}} style={menuItem}>⚙ Categories</button>
                   <div style={{height:1,background:"#2e2d3d"}}/>
+                  <button onClick={()=>{setShowUserMenu(false);setShowBankImport(true);}} style={menuItem}>🏦 Import Bank Statement</button>
                   <button onClick={()=>{setShowUserMenu(false);exportCSV();}} style={menuItem}>↓ Export CSV</button>
                   <label style={menuItem}>
                     ↑ Import CSV
@@ -971,6 +986,7 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
           <div style={{background:"#ff890615",border:"1px solid #ff890640",borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
             <div style={{fontSize:13,color:"#fffffe",flex:1}}>Welcome! Import your existing data to get started.</div>
             <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+              <button className="btn btn-primary" style={{padding:"8px 16px",fontSize:12}} onClick={()=>setShowBankImport(true)}>Bank Statement</button>
               <div className="import-wrap" style={{flex:"none"}}>
                 <button className="btn btn-primary" style={{padding:"8px 16px",fontSize:12}}>Import CSV</button>
                 <input type="file" accept=".csv" onChange={importCSV}/>
@@ -990,6 +1006,9 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
                 </div>
               ))}
             </div>
+            {(xferIn>0||xferOut>0)&&<div style={{fontSize:11,color:"#a7a9be",textAlign:"center",marginTop:-6}}>
+              {TRANSFER_CAT} not counted above: <span style={{color:"#2cb67d"}}>+{fmt(xferIn)}</span> / <span style={{color:"#f25f4c"}}>−{fmt(xferOut)}</span>
+            </div>}
             {totalIncome>0&&<div className="card">
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:10,fontSize:12,color:"#a7a9be"}}>
                 <span>Expense Rate</span><span style={{color:totalExpense/totalIncome>0.8?"#f25f4c":"#2cb67d"}}>{Math.round((totalExpense/totalIncome)*100)}%</span>
@@ -1043,7 +1062,7 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
             </div>
             <div className="card">
               <div style={{fontSize:12,color:"#a7a9be",marginBottom:14,textTransform:"uppercase",letterSpacing:1}}>Income Sources</div>
-              {cats.income.map(cat=>{ const total=filtered.filter(t=>t.type==="income"&&t.category===cat).reduce((s,t)=>s+Number(t.amount),0); if(!total)return null; return <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #1e1d2e",fontSize:13}}><span>{cat}</span><span style={{color:"#2cb67d",fontWeight:500}}>{fmt(total)}</span></div>; })}
+              {cats.income.filter(cat=>cat!==TRANSFER_CAT).map(cat=>{ const total=filtered.filter(t=>t.type==="income"&&t.category===cat).reduce((s,t)=>s+Number(t.amount),0); if(!total)return null; return <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #1e1d2e",fontSize:13}}><span>{cat}</span><span style={{color:"#2cb67d",fontWeight:500}}>{fmt(total)}</span></div>; })}
               {filtered.filter(t=>t.type==="income").length===0&&<div style={{textAlign:"center",color:"#a7a9be",padding:"24px 0",fontSize:13}}>No income data</div>}
             </div>
             <div className="card" style={{borderColor:"#ff890622",background:"#ff890608"}}>
@@ -1217,6 +1236,18 @@ function Dashboard({ session, onLogout, onGoToShop, onGoToAdmin, canShop, isAdmi
           setTransactions={setTransactions}
           showToast={showToast}
           onClose={()=>setShowCatManager(false)}
+        />
+      )}
+
+      {/* Bank Statement Import Modal */}
+      {showBankImport&&(
+        <BankImportModal
+          session={session}
+          cats={cats}
+          transactions={transactions}
+          onImported={rows=>{ setTransactions(p=>[...rows,...p].sort((a,b)=>new Date(b.date)-new Date(a.date))); setShowMigrationBanner(false); }}
+          onClose={()=>setShowBankImport(false)}
+          showToast={showToast}
         />
       )}
 

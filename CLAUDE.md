@@ -40,6 +40,7 @@ src/
   App.jsx          — Finance app: auth, dashboard, transactions, categories; top-level routing + profile/access gating
   ShopApp.jsx      — Shop manager: products (box/pack pricing), stock, sales, reports, categories
   AdminApp.jsx     — User management dashboard (admin only)
+  BankImport.jsx   — Bank statement importer (ABA/ACLEDA/Wing/any; Excel, CSV, PDF) + TRANSFER_CAT
   supabaseClient.js — Supabase client init (reads from .env)
   index.js         — React entry point
 supabase/
@@ -81,6 +82,14 @@ All per-user tables have RLS (`user_id = auth.uid()`), plus an `is_admin()` poli
 - Lists all profiles; per user toggle Finance / Shop / Admin / Disabled (self-protected against lockout).
 - **Disabled** locks an account out instantly (reversible) — the user is signed out on next load. There is no hard delete (would require a service-role Edge Function, intentionally not used); use Disable instead.
 - Categories (both finance & shop): seeded with defaults on first load; rename keeps records in sync; delete blocked while in use.
+
+## Bank statement import (Finance, user menu → 🏦 Import Bank Statement)
+- Parses in the browser (`xlsx`, `pdfjs-dist` lazy-loaded); auto-detects columns/bank/currency; KHR ÷ 4100. User reviews every row (date range, category, type) before saving.
+- Duplicate protection: same date+type+amount AND (same note OR same HH:MM) → locked; same date+type+amount only → unticked "maybe". Re-checked against the DB right before insert.
+- Own-account transfers (statement holder's name, but not joint "X AND Y" accounts) start unticked.
+- **ABA's Excel export stops at 60 transactions** — importer warns; the PDF has all rows.
+- Category **"Loan / Transfer"** (`TRANSFER_CAT`) is excluded from all income/expense totals; auto-added to every user's categories on load.
+- Bank statements live in `/statement/` locally — gitignored, never commit.
 
 ## Shop business context
 Owner: Raksa, Phnom Penh, Cambodia. Small home convenience store (អាជីវកម្មលក់ចាប់ហួយ) selling cleaning supplies, personal care products, food/snacks, drinks, household items.
